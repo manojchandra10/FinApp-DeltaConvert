@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="DeltaConvert brings live exchange rates, model rate forecasts, equity signals and portfolio context into one focused market workspace.">
+  <meta name="theme-color" content="#181919">
+  <title>DeltaConvert — Markets move. Know the moment.</title>
+  <meta name="api-base" content="/api/v1">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body data-page="dashboard" class="home-page">
+  <div class="app-shell">
+    <header class="site-header home-site-header">
+      <div class="navigation-bar">
+        <a class="brand" href="index.html" aria-label="DeltaConvert home">
+          <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+          <span class="brand-copy"><strong>Delta</strong><small>Convert</small></span>
+        </a>
+        <nav class="main-nav" id="primaryNavigation" aria-label="Primary navigation">
+          <a class="nav-link is-active" href="index.html" data-page-link="dashboard">Home</a>
+          <a class="nav-link" href="exchange.html" data-page-link="exchange">Exchange</a>
+          <a class="nav-link" href="markets.html" data-page-link="markets">Markets</a>
+          <a class="nav-link" href="portfolio.html" data-page-link="portfolio">Portfolio</a>
+          <a class="nav-link" href="alerts.html" data-page-link="alerts">Alerts</a>
+        </nav>
+        <div class="topbar-actions home-header-actions">
+          <a class="header-login" href="#">Log in</a>
+          <a class="button header-open-app" href="exchange.html">Open app</a>
+          <button class="icon-button mobile-menu" type="button" data-action="menu" aria-label="Open navigation" aria-controls="primaryNavigation" aria-expanded="false">
+            <span></span><span></span><span></span>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <div class="workspace home-workspace">
+      <main class="page-content landing-page">
+        <section class="landing-hero" aria-labelledby="landingTitle">
+          <div class="landing-hero-copy">
+            <span class="eyebrow inverse">Rates, stocks and alert rules</span>
+            <h1 id="landingTitle">Markets move.<br><em>DeltaConvert tells you when.</em></h1>
+            <p>Track exchange rates, read equity behaviour and set precise alerts from one focused market workspace.</p>
+            <div class="landing-hero-actions">
+              <a class="button button-orange" href="#homeAlertBuilder">Create an alert</a>
+              <a class="button button-outline-light" href="markets.html">Explore markets</a>
+            </div>
+            <div class="landing-proof" aria-label="Product highlights">
+              <span><strong>01</strong> Clear rate routes</span>
+              <span><strong>02</strong> Behaviour-led signals</span>
+              <span><strong>03</strong> Rules that stay useful</span>
+            </div>
+          </div>
+          <div class="landing-hero-visual" aria-label="GBP to EUR quote with an alert threshold">
+            <div class="hero-plane" aria-hidden="true"></div>
+            <div class="hero-quote-surface">
+              <div class="hero-quote-head"><span>GBP / EUR</span><small>London session</small></div>
+              <div class="hero-quote-value"><strong id="heroQuoteRate">1.1881</strong><span id="heroQuoteMove">+0.31%</span></div>
+              <svg class="hero-quote-chart" viewBox="0 0 560 230" preserveAspectRatio="none" role="img" aria-label="Illustrative exchange rate line rising towards an alert threshold">
+                <path class="hero-threshold-line" d="M0 61 H560"/>
+                <path class="hero-rate-line" d="M0 190 C58 178 85 145 132 155 S216 186 260 131 S338 86 386 103 S469 66 560 43"/>
+                <circle cx="560" cy="43" r="8"/>
+              </svg>
+              <div class="hero-threshold-label"><span>Alert line</span><strong>1.2050</strong></div>
+              <div class="hero-quote-foot"><span>Low <strong id="heroQuoteLow">1.1762</strong></span><span>Now <strong id="heroQuoteNow">1.1881</strong></span></div>
+            </div>
+            <div class="hero-alert-ticket">
+              <span class="eyebrow">Rule ready</span>
+              <strong>GBP/EUR rises above 1.2050</strong>
+              <small>In-app · Active</small>
+            </div>
+            <div class="hero-signal-chip"><i></i><span>Two signals sit near their threshold</span></div>
+          </div>
+        </section>
+
+        <nav class="capability-strip" aria-label="Product areas">
+          <a href="exchange.html"><span>01</span><strong>Live rates</strong><small>ECB reference rates and a converter</small></a>
+          <a href="exchange.html#forecast"><span>02</span><strong>Rate forecast</strong><small>Model estimate with a band</small></a>
+          <a href="markets.html"><span>03</span><strong>Equity signals</strong><small>Group stocks by behaviour</small></a>
+          <a href="portfolio.html"><span>04</span><strong>Portfolio exposure</strong><small>See allocation and drift</small></a>
+        </nav>
+
+        <section class="landing-product-section fade-section">
+          <div class="landing-section-intro">
+            <span class="eyebrow">Live product view</span>
+            <h2>Your market cockpit</h2>
+            <p>The cards you already know now sit inside a fuller product story. Each one opens a separate workspace.</p>
+          </div>
+          <section class="hero-grid">
+            <article class="hero-card hero-copy-card">
+              <span class="eyebrow inverse">19 July market tape</span>
+              <h2>Read the move.<br><em>Choose the route.</em></h2>
+              <p>A trading workspace that puts foreign exchange, equities and personal exposure into one visual system.</p>
+              <div class="hero-actions">
+                <a class="button button-paper" href="exchange.html">Build an FX route</a>
+                <a class="button button-outline-light" href="markets.html">Scan equities</a>
+              </div>
+              <div class="hero-note"><span>London session</span><strong>Risk appetite is mildly positive</strong></div>
+            </article>
+            <article class="hero-card pulse-card">
+              <div class="pulse-top"><span class="eyebrow">Composite pulse</span><span class="live-pill">Live demo</span></div>
+              <div class="pulse-number"><strong data-pulse-number>64</strong><span>/100</span></div>
+              <div class="pulse-orbit" aria-hidden="true"><i></i><i></i><i></i><b></b></div>
+              <div class="pulse-bottom"><span>FX calm</span><span>Equities bid</span><span>Volatility contained</span></div>
+            </article>
+          </section>
+        </section>
+
+        <section class="section-block fade-section">
+          <div class="section-heading split-heading">
+            <div><span class="eyebrow">Move map</span><h2>Four signals worth opening</h2></div>
+            <button class="text-button js-refresh" type="button">Recalculate signal map</button>
+          </div>
+          <div class="signal-grid">
+            <article class="signal-card signal-card-aqua">
+              <div class="signal-card-head"><span>GBP / USD</span><strong class="positive" id="homeSignalGbpUsdMove">+0.24%</strong></div>
+              <h3 id="homeSignalGbpUsd">1.2934</h3>
+              <svg class="mini-chart" viewBox="0 0 300 100" preserveAspectRatio="none" aria-hidden="true"><path d="M0 82 C45 78,48 58,88 62 S130 86,165 49 S220 34,300 18"/></svg>
+              <p>Sterling holds above the morning range after softer US yields.</p>
+              <a href="exchange.html?pair=GBPUSD">Open route</a>
+            </article>
+            <article class="signal-card signal-card-paper">
+              <div class="signal-card-head"><span>US technology</span><strong class="positive">+0.62%</strong></div>
+              <h3>18,391</h3>
+              <svg class="mini-chart" viewBox="0 0 300 100" preserveAspectRatio="none" aria-hidden="true"><path d="M0 79 C30 88,63 46,95 57 S130 42,165 62 S220 30,300 24"/></svg>
+              <p>Large-cap momentum remains broad, though breadth has narrowed.</p>
+              <a href="markets.html?filter=technology">Open signal wall</a>
+            </article>
+            <article class="signal-card signal-card-orange">
+              <div class="signal-card-head"><span>Portfolio drift</span><strong>3.8%</strong></div>
+              <h3>Overweight</h3>
+              <div class="drift-bars" aria-hidden="true"><i style="--w:88%"></i><i style="--w:64%"></i><i style="--w:42%"></i></div>
+              <p>Your sample portfolio is above its technology target by 3.8 points.</p>
+              <a href="portfolio.html">Review allocation</a>
+            </article>
+            <article class="signal-card signal-card-dark">
+              <div class="signal-card-head"><span>Alert coverage</span><strong>7 active</strong></div>
+              <h3>2 near trigger</h3>
+              <div class="threshold-meter"><span style="--x:72%"></span><b style="--x:83%"></b></div>
+              <p>Two rules sit within one per cent of their selected threshold.</p>
+              <a href="alerts.html">Open alert studio</a>
+            </article>
+          </div>
+        </section>
+
+        <section class="product-journey fade-section" aria-labelledby="journeyTitle">
+          <div class="journey-heading"><span class="eyebrow inverse">One connected flow</span><h2 id="journeyTitle">Watch. Compare. Act.</h2></div>
+          <ol class="journey-track">
+            <li><span>01</span><div><strong>Watch the behaviour</strong><p>Open a rate, equity or portfolio signal and read its current state.</p></div></li>
+            <li><span>02</span><div><strong>Compare the route</strong><p>Check the price, fee, exposure or threshold beside the market context.</p></div></li>
+            <li><span>03</span><div><strong>Act at your moment</strong><p>Open the relevant workspace or save a rule that waits for the exact condition.</p></div></li>
+          </ol>
+        </section>
+
+        <section class="dashboard-lower section-block fade-section">
+          <article class="panel corridor-panel">
+            <div class="panel-head"><div><span class="eyebrow">Cross-border window</span><h2>GBP to EUR right now</h2></div><span class="route-badge">GBP → EUR</span></div>
+            <div class="route-visual">
+              <div><small>You send</small><strong>£10,000</strong></div>
+              <span class="route-line" aria-hidden="true"><i></i><i></i><i></i></span>
+              <div><small>Recipient gets</small><strong id="homeRouteReceive">€11,864.20</strong></div>
+            </div>
+            <div class="route-meta"><span><small>Rate</small><strong id="homeRouteRate">1.1881</strong></span><span><small>Fee (demo)</small><strong>£16.00</strong></span><span><small>Arrival (demo)</small><strong>Today, 16:10</strong></span></div>
+            <a class="button button-ink full-width" href="exchange.html">Open the route builder</a>
+          </article>
+          <article class="panel watch-panel">
+            <div class="panel-head"><div><span class="eyebrow">Pinned instruments</span><h2>Watchlist</h2></div><a class="text-link" href="markets.html">Edit list</a></div>
+            <div class="watch-list" data-dashboard-watchlist></div>
+          </article>
+        </section>
+
+        <section class="landing-showcase showcase-exchange fade-section">
+          <div class="showcase-copy">
+            <span class="eyebrow">Exchange workspace</span>
+            <h2>See the full route before you move.</h2>
+            <p>Rate, fee, settlement pace and arrival sit together. The route builder responds as soon as the amount or currency changes.</p>
+            <a class="button button-ink" href="exchange.html">Open Exchange</a>
+          </div>
+          <div class="showcase-fx-visual" aria-label="Illustrative foreign exchange quote">
+            <div class="showcase-fx-top"><span>You send</span><strong>£10,000</strong></div>
+            <div class="showcase-fx-route"><i></i><i></i><i></i><b>1.1881</b></div>
+            <div class="showcase-fx-bottom"><span>Recipient gets</span><strong>€11,864.20</strong></div>
+            <div class="showcase-fx-meta"><span>Fee <b>£16.00</b></span><span>Arrival <b>16:10</b></span></div>
+          </div>
+        </section>
+
+        <section class="landing-showcase showcase-markets fade-section">
+          <div class="showcase-market-visual" aria-label="Illustrative equity signal wall">
+            <div class="market-word"><span>Persistent</span><strong>AAPL</strong><small>+1.24%</small></div>
+            <div class="market-word"><span>Accelerating</span><strong>NVDA</strong><small>+2.83%</small></div>
+            <div class="market-word"><span>Defensive</span><strong>AZN</strong><small>+0.18%</small></div>
+            <div class="market-word"><span>Unsettled</span><strong>TSLA</strong><small>−1.78%</small></div>
+          </div>
+          <div class="showcase-copy">
+            <span class="eyebrow">Markets workspace</span>
+            <h2>Stocks grouped around behaviour.</h2>
+            <p>Search by ticker, then switch between momentum, quality, volatility and income views without losing the broader signal wall.</p>
+            <a class="button button-ink" href="markets.html">Open Markets</a>
+          </div>
+        </section>
+
+        <section class="landing-alert-builder fade-section" id="homeAlertBuilder" aria-labelledby="homeAlertTitle">
+          <div class="home-alert-intro">
+            <span class="eyebrow">Alert Studio</span>
+            <h2 id="homeAlertTitle">Set the moment once.</h2>
+            <p>Build a rule here, then continue inside the full Alert Studio with the same values.</p>
+          </div>
+          <div class="home-alert-form">
+            <div class="home-alert-controls">
+              <label>Instrument<select id="homeAlertAsset" aria-label="Homepage alert instrument"><option value="GBP/EUR">GBP/EUR</option><option value="GBP/USD">GBP/USD</option><option value="AAPL">AAPL</option><option value="NVDA">NVDA</option><option value="TSLA">TSLA</option><option value="FTSE 100">FTSE 100</option></select></label>
+              <label>Condition<select id="homeAlertCondition" aria-label="Homepage alert condition"><option value="rises above">Rises above</option><option value="falls below">Falls below</option><option value="moves by more than">Moves by more than</option></select></label>
+              <label>Threshold<input id="homeAlertThreshold" type="number" step="0.01" value="1.20"></label>
+              <label>Unit<select id="homeAlertUnit" aria-label="Homepage alert unit"><option value="">Rate</option><option value="%">Per cent</option><option value="GBP">GBP</option><option value="USD">USD</option></select></label>
+            </div>
+            <div class="home-alert-preview">
+              <span>Rule preview</span>
+              <strong id="homeAlertPreview">Tell me when GBP/EUR rises above 1.20.</strong>
+              <a class="button button-ink" id="homeAlertStart" href="alerts.html">Continue in Alert Studio</a>
+            </div>
+          </div>
+        </section>
+
+        <section class="data-principles fade-section" aria-labelledby="dataTitle">
+          <div class="data-principles-heading"><span class="eyebrow inverse">Data and trust</span><h2 id="dataTitle">Plain context beside every figure.</h2></div>
+          <div class="data-principles-grid">
+            <div><span>01</span><strong>Data status</strong><p>Every figure states whether it is an ECB reference rate, a model estimate or sample data.</p></div>
+            <div><span>02</span><strong>Price context</strong><p>Place rate, fee and movement beside the action.</p></div>
+            <div><span>03</span><strong>Local storage</strong><p>Keep demo watchlists, holdings and rules inside the browser.</p></div>
+            <div><span>04</span><strong>Risk language</strong><p>State limits plainly and keep sample figures separate from advice.</p></div>
+          </div>
+        </section>
+
+        <section class="closing-cta fade-section">
+          <span class="eyebrow inverse">The next move</span>
+          <h2>See the movement.<br><em>Set the moment.</em></h2>
+          <div><a class="button button-orange" href="#homeAlertBuilder">Create your first alert</a><a class="button button-outline-light" href="markets.html">Open the market workspace</a></div>
+        </section>
+      </main>
+    </div>
+
+    <footer class="site-footer">
+      <div class="footer-inner">
+        <div class="footer-intro">
+          <a class="brand footer-brand" href="index.html" aria-label="DeltaConvert home">
+            <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+            <span class="brand-copy"><strong>Delta</strong><small>Convert</small></span>
+          </a>
+          <p>Exchange rates, rate forecasts, equity signals, portfolio context and alert rules in one focused workspace.</p>
+        </div>
+        <div class="footer-links" aria-label="Footer navigation">
+          <div><strong>Product</strong><a href="index.html">Home</a><a href="exchange.html">Exchange</a><a href="markets.html">Markets</a><a href="portfolio.html">Portfolio</a><a href="alerts.html">Alerts</a></div>
+          <div><strong>Company</strong><a href="#">About</a><a href="#">Careers</a><a href="#">Press</a><a href="#">Contact</a></div>
+          <div><strong>Resources</strong><a href="#">Data status</a><a href="#">Help centre</a><a href="#">Developer API</a><a href="#">Market notes</a></div>
+          <div><strong>Legal</strong><a href="#">Privacy policy</a><a href="#">Cookie policy</a><a href="#">Terms of use</a><a href="#">Risk disclosure</a></div>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <span>© 2026 DeltaConvert</span>
+        <span>Rates and forecasts are indicative only; demo areas use sample figures. No investment advice.</span>
+      </div>
+    </footer>
+  </div>
+
+  <div class="drawer-scrim" data-action="close-menu"></div>
+
+  <section class="command-palette" id="commandPalette" role="dialog" aria-modal="true" aria-labelledby="commandTitle" hidden>
+    <div class="command-panel">
+      <div class="command-head">
+        <div><span class="eyebrow">Go anywhere</span><h2 id="commandTitle">Command menu</h2></div>
+        <button class="icon-button" type="button" data-action="close-command" aria-label="Close command menu">×</button>
+      </div>
+      <label class="command-search"><span>Search</span><input id="commandInput" type="search" placeholder="Type a page or action" autocomplete="off"></label>
+      <div class="command-results" id="commandResults">
+        <a href="index.html" data-command-item><span>Home</span><small>Market pulse, product story and watchlist</small></a>
+        <a href="exchange.html" data-command-item><span>Exchange</span><small>Live rates, converter and forecast</small></a>
+        <a href="markets.html" data-command-item><span>Markets</span><small>Search stocks and signals</small></a>
+        <a href="portfolio.html" data-command-item><span>Portfolio</span><small>Holdings, allocation and export</small></a>
+        <a href="alerts.html" data-command-item><span>Alerts</span><small>Create price and FX rules</small></a>
+      </div>
+    </div>
+  </section>
+
+  <section class="profile-menu" id="profileMenu" hidden>
+    <strong>Alex Knight</strong>
+    <span>Demo workspace</span>
+    <button type="button" data-action="focus-mode">Toggle focus mode</button>
+    <button type="button" data-action="clear-local-data">Reset demo data</button>
+  </section>
+
+  <div class="toast-region" id="toastRegion" aria-live="polite" aria-atomic="true"></div>
+  <script src="app.js" defer></script>
+</body>
+</html>

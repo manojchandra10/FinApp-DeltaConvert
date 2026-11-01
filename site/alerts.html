@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Rule studio for local demo market alerts and digest preferences.">
+  <meta name="theme-color" content="#181919">
+  <title>Alerts — DeltaConvert</title>
+  <meta name="api-base" content="/api/v1">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body data-page="alerts">
+  <div class="app-shell">
+    <header class="site-header">
+      <div class="navigation-bar">
+        <a class="brand" href="index.html" aria-label="DeltaConvert home">
+          <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+          <span class="brand-copy"><strong>Delta</strong><small>Convert</small></span>
+        </a>
+        <nav class="main-nav" id="primaryNavigation" aria-label="Primary navigation">
+          <a class="nav-link" href="index.html" data-page-link="dashboard">Home</a>
+          <a class="nav-link" href="exchange.html" data-page-link="exchange">Exchange</a>
+          <a class="nav-link" href="markets.html" data-page-link="markets">Markets</a>
+          <a class="nav-link" href="portfolio.html" data-page-link="portfolio">Portfolio</a>
+          <a class="nav-link is-active" href="alerts.html" data-page-link="alerts">Alerts</a>
+        </nav>
+        <div class="topbar-actions">
+          <button class="icon-button js-command" type="button" aria-label="Open command menu"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></button>
+          <button class="refresh-button js-refresh" type="button"><span class="refresh-ring"></span><span class="refresh-copy">Refresh <small data-last-updated>just now</small></span></button>
+          <button class="avatar-button js-profile" type="button" aria-label="Open profile menu" aria-expanded="false">AK</button>
+          <button class="icon-button mobile-menu" type="button" data-action="menu" aria-label="Open navigation" aria-controls="primaryNavigation" aria-expanded="false">
+            <span></span><span></span><span></span>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <div class="workspace">
+      <section class="page-masthead" aria-labelledby="pageTitle">
+        <div class="page-heading">
+          <span class="eyebrow">Rule-based monitoring</span>
+          <h1 id="pageTitle">Alerts</h1>
+        </div>
+        <button class="masthead-command js-command" type="button">Quick command <kbd>⌘ K</kbd></button>
+      </section>
+
+      <main class="page-content">
+        
+<section class="alerts-layout">
+  <article class="rule-studio panel-dark">
+    <div class="panel-head"><div><span class="eyebrow inverse">Rule studio</span><h2>Write the market condition</h2></div><span class="rule-count" data-alert-count>0 rules</span></div>
+    <div class="rule-sentence">
+      <span>Tell me when</span>
+      <select id="alertAsset"><option value="GBP/EUR">GBP/EUR</option><option value="GBP/USD">GBP/USD</option><option value="AAPL">AAPL</option><option value="NVDA">NVDA</option><option value="TSLA">TSLA</option><option value="FTSE 100">FTSE 100</option></select>
+      <select id="alertCondition"><option value="rises above">rises above</option><option value="falls below">falls below</option><option value="moves by more than">moves by more than</option></select>
+      <input id="alertThreshold" type="number" step="0.01" value="1.20" aria-label="Alert threshold">
+      <select id="alertUnit"><option value="">rate</option><option value="%">per cent</option><option value="GBP">GBP</option><option value="USD">USD</option></select>
+    </div>
+    <div class="rule-preview"><span class="eyebrow inverse">Preview</span><p id="rulePreview">Tell me when GBP/EUR rises above 1.20.</p></div>
+    <div class="channel-picker"><span>Send through</span><button type="button" class="is-selected" data-channel="In-app">In-app</button><button type="button" data-channel="Email">Email</button><button type="button" data-channel="SMS">SMS</button></div>
+    <button class="button button-orange full-width" type="button" data-action="save-alert">Save rule</button>
+  </article>
+
+  <article class="panel alert-coverage-panel">
+    <div class="panel-head"><div><span class="eyebrow">Coverage map</span><h2>Where your rules sit</h2></div><span class="live-pill">Local demo</span></div>
+    <div class="coverage-map" aria-hidden="true"><span class="coverage-ring ring-one"></span><span class="coverage-ring ring-two"></span><span class="coverage-ring ring-three"></span><i class="coverage-point point-a"></i><i class="coverage-point point-b"></i><i class="coverage-point point-c"></i><i class="coverage-point point-d"></i><strong>7</strong><small>active</small></div>
+    <div class="coverage-legend"><span><i></i>FX thresholds</span><span><i></i>Equity price</span><span><i></i>Portfolio drift</span></div>
+  </article>
+</section>
+
+<section class="section-block alerts-lower">
+  <article class="panel saved-rules-panel">
+    <div class="panel-head"><div><span class="eyebrow">Saved rules</span><h2>Active and paused</h2></div><button class="text-button" type="button" data-action="clear-alerts">Clear all</button></div>
+    <div class="saved-rules" id="savedRules"></div>
+  </article>
+  <article class="panel digest-panel">
+    <div><span class="eyebrow">Pulse digest</span><h2>One summary, at your time</h2><p>Choose a schedule for a demo digest. The preference is stored in this browser.</p></div>
+    <label>Delivery time<input id="digestTime" type="time" value="07:30"></label>
+    <label>Frequency<select id="digestFrequency"><option value="Every weekday">Every weekday</option><option value="Daily">Daily</option><option value="Monday only">Monday only</option></select></label>
+    <button class="button button-ink full-width" type="button" data-action="save-digest">Save digest</button>
+    <button class="text-button centre" type="button" data-action="test-digest">Send a demo preview</button>
+  </article>
+</section>
+
+      </main>
+    </div>
+
+    <footer class="site-footer">
+      <div class="footer-inner">
+        <div class="footer-intro">
+          <a class="brand footer-brand" href="index.html" aria-label="DeltaConvert home">
+            <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+            <span class="brand-copy"><strong>Delta</strong><small>Convert</small></span>
+          </a>
+          <p>Exchange rates, rate forecasts, equity signals, portfolio context and alert rules in one focused workspace.</p>
+        </div>
+        <div class="footer-links" aria-label="Footer navigation">
+          <div><strong>Product</strong><a href="index.html">Home</a><a href="exchange.html">Exchange</a><a href="markets.html">Markets</a><a href="portfolio.html">Portfolio</a><a href="alerts.html">Alerts</a></div>
+          <div><strong>Company</strong><a href="#">About</a><a href="#">Careers</a><a href="#">Press</a><a href="#">Contact</a></div>
+          <div><strong>Resources</strong><a href="#">Data status</a><a href="#">Help centre</a><a href="#">Developer API</a><a href="#">Market notes</a></div>
+          <div><strong>Legal</strong><a href="#">Privacy policy</a><a href="#">Cookie policy</a><a href="#">Terms of use</a><a href="#">Risk disclosure</a></div>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <span>© 2026 DeltaConvert</span>
+        <span>Rates and forecasts are indicative only; demo areas use sample figures. No investment advice.</span>
+      </div>
+    </footer>
+  </div>
+
+  <div class="drawer-scrim" data-action="close-menu"></div>
+
+  <section class="command-palette" id="commandPalette" role="dialog" aria-modal="true" aria-labelledby="commandTitle" hidden>
+    <div class="command-panel">
+      <div class="command-head">
+        <div><span class="eyebrow">Go anywhere</span><h2 id="commandTitle">Command menu</h2></div>
+        <button class="icon-button" type="button" data-action="close-command" aria-label="Close command menu">×</button>
+      </div>
+      <label class="command-search"><span>Search</span><input id="commandInput" type="search" placeholder="Type a page or action" autocomplete="off"></label>
+      <div class="command-results" id="commandResults">
+        <a href="index.html" data-command-item><span>Home</span><small>Market pulse, product story and watchlist</small></a>
+        <a href="exchange.html" data-command-item><span>Exchange</span><small>Live rates, converter and forecast</small></a>
+        <a href="markets.html" data-command-item><span>Markets</span><small>Search stocks and signals</small></a>
+        <a href="portfolio.html" data-command-item><span>Portfolio</span><small>Holdings, allocation and export</small></a>
+        <a href="alerts.html" data-command-item><span>Alerts</span><small>Create price and FX rules</small></a>
+      </div>
+    </div>
+  </section>
+
+  <section class="profile-menu" id="profileMenu" hidden>
+    <strong>Alex Knight</strong>
+    <span>Demo workspace</span>
+    <button type="button" data-action="focus-mode">Toggle focus mode</button>
+    <button type="button" data-action="clear-local-data">Reset demo data</button>
+  </section>
+
+  <div class="toast-region" id="toastRegion" aria-live="polite" aria-atomic="true"></div>
+  <script src="app.js" defer></script>
+</body>
+</html>

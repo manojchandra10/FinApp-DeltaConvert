@@ -1,0 +1,125 @@
+# Currency rates and forecast stack.
+# The Flask file-converter service and its dc_temp volume have been removed.
+#
+# The project name is pinned to "deltaconvert" below. That matches the
+# default the old stack used (taken from the folder name), so the existing
+# volumes (deltaconvert_postgres_data, deltaconvert_certbot_certs) keep
+# working with no data migration.
+#
+# .env is optional. Without it the stack starts on the local defaults
+# below, which is fine for development. Production should have a .env
+# with real secrets; the values here are deliberately weak and obvious.
+# ADMIN_SECRET has no default on purpose, so the audit-resolve endpoint
+# refuses every request until a real one is set.
+#
+#   POSTGRES_USER=...
+#   POSTGRES_PASSWORD=...
+#   POSTGRES_DB=...
+#   ADMIN_SECRET=...
+#   DOMAIN=deltaconvert.com
+
+name: deltaconvert
+
+services:
+
+  # === REVERSE PROXY (serves the static site and proxies /api) ===
+  nginx:
+    build:
+      context: .
+      dockerfile: Dockerfile.nginx
+    container_name: dc_nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      cortex:
+        condition: service_healthy
+    volumes:
+      - certbot_webroot:/var/www/certbot:ro
+      - certbot_certs:/etc/letsencrypt:ro
+    networks:
+      - frontend
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+  # === CORTEX (FastAPI rates + forecast backend) ===
+  cortex:
+    build: ./stochastix/cortex
+    container_name: dc_cortex
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-deltaconvert}:${POSTGRES_PASSWORD:-localdev}@db:5432/${POSTGRES_DB:-deltaconvert}
+      - ENVIRONMENT=production
+      - ADMIN_SECRET=${ADMIN_SECRET:-}
+      - APP_BRAND=${APP_BRAND:-DeltaConvert}
+      - CORS_ORIGINS=https://${DOMAIN:-deltaconvert.com},https://www.${DOMAIN:-deltaconvert.com},http://localhost
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - frontend
+      - backend
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+
+  # === POSTGRESQL (prediction audit database) ===
+  db:
+    image: postgres:15-alpine
+    container_name: dc_postgres
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-deltaconvert}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-localdev}
+      - POSTGRES_DB=${POSTGRES_DB:-deltaconvert}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-deltaconvert} -d ${POSTGRES_DB:-deltaconvert}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  # === CERTBOT (SSL certificate renewal) ===
+  certbot:
+    image: certbot/certbot
+    container_name: dc_certbot
+    volumes:
+      - certbot_webroot:/var/www/certbot
+      - certbot_certs:/etc/letsencrypt
+    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do sleep 12h & wait $${!}; certbot renew --quiet; done'"
+    restart: unless-stopped
+
+networks:
+  frontend:
+    driver: bridge
+  backend:
+    driver: bridge
+    internal: true  # DB is unreachable from outside
+
+volumes:
+  postgres_data:
+  certbot_webroot:
+  certbot_certs:

@@ -1,0 +1,47 @@
+# Local development settings.
+#
+# Deliberately NOT named docker-compose.override.yml. Compose loads that
+# filename automatically, so a stray copy on the server would silently
+# drop HTTPS, expose the API port and switch on the docs, with nothing in
+# any log to say so. This name is inert unless it is named explicitly:
+#
+#   docker compose -f docker-compose.yml -f compose.local.yml up -d
+#
+# or through the dev.ps1 wrapper, which does exactly that. Production runs
+# plain `docker compose up -d` and reads docker-compose.yml alone.
+
+services:
+
+  nginx:
+    build:
+      args:
+        # Plain HTTP on port 80. The production config listens on 443 and
+        # reads a Let's Encrypt certificate that does not exist here, so
+        # nginx would refuse to start.
+        NGINX_CONF: nginx/nginx.local.conf
+    depends_on:
+      cortex:
+        # service_started rather than service_healthy: TensorFlow takes up
+        # to a minute to import, and the site is worth looking at while
+        # that happens. Live rates appear once cortex is ready.
+        condition: service_started
+
+  cortex:
+    environment:
+      # Swagger docs at http://localhost:8000/docs. Production keeps
+      # ENVIRONMENT=production, which switches the docs off.
+      - ENVIRONMENT=development
+      # Uncomment for a small currency set when training time matters.
+      # It drives the API and the trainer together, so both stay in step.
+      # Commented out means all 29 currencies (45-90 minutes to train).
+      # - CURRENCIES=GBP,USD,INR
+    ports:
+      # Direct access to the API, useful for testing endpoints without
+      # going through nginx.
+      - "8000:8000"
+    volumes:
+      # Trained models land on the host rather than inside the container,
+      # so they appear in stochastix\cortex\models as the trainer writes
+      # them and survive every rebuild. Production bakes models into the
+      # image at build time and mounts nothing.
+      - ./stochastix/cortex/models:/app/cortex/models

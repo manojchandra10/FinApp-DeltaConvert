@@ -1,0 +1,25 @@
+# Stage 1 — minify the static site so the shipped JS and CSS are compact
+# and awkward to read. This is obfuscation only: every browser downloads
+# the frontend of every website, so the real protection is that models,
+# training code and data logic never leave the backend.
+#
+# esbuild runs inside this stage, so Node and npm are not needed on the
+# machine doing the build.
+FROM node:20-alpine AS minify
+RUN npm install -g esbuild@0.23.0
+WORKDIR /work
+COPY site/ ./site/
+RUN mkdir -p /out \
+ && cp site/*.html /out/ \
+ && cp site/robots.txt site/sitemap.xml /out/ \
+ && esbuild site/app.js --minify --target=es2020 --outfile=/out/app.js \
+ && esbuild site/styles.css --minify --outfile=/out/styles.css
+
+# Stage 2 — nginx serves the minified site and proxies /api to the backend.
+# NGINX_CONF picks the config: the production default listens on 443 with
+# a Let's Encrypt certificate; docker-compose.override.yml swaps in the
+# HTTP-only local config when building on a laptop.
+FROM nginx:1.27-alpine
+ARG NGINX_CONF=nginx/nginx.conf
+COPY ${NGINX_CONF} /etc/nginx/nginx.conf
+COPY --from=minify /out /usr/share/nginx/html

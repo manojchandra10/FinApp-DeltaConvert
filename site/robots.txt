@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://deltaconvert.com/sitemap.xml

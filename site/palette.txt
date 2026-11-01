@@ -1,0 +1,9 @@
+DeltaConvert reference palette
+
+Ink       #181919
+Graphite  #2F3131
+Paper     #F8FAFB
+Orange    #FC6540
+Aqua      #66F2E0
+Teal      #2CB4A4
+Deep teal #18785D

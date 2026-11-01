@@ -1,0 +1,31 @@
+# Secrets
+.env
+*.pem
+*.key
+
+# Python
+__pycache__/
+*.pyc
+venv/
+.venv/
+
+# Node
+node_modules/
+dist/
+
+# ML Models (large binaries)
+stochastix/cortex/models/*.keras
+stochastix/cortex/models/*.joblib
+
+# Temp files
+*.sqlite
+ecb_cache*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+compose.local.yml
