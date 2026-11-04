@@ -63,5 +63,6 @@ class PredictionRequest(BaseModel):
     def validate_currency(cls, v: str):
         v = v.upper()
         if v not in SUPPORTED_CURRENCIES:
-            raise ValueError(f"Currency '{v}' is not supported.")
+            # The message deliberately leaves the submitted value out.
+            raise ValueError("Currency is not supported.")
         return v

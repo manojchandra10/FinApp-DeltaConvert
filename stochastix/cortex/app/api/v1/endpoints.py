@@ -1,24 +1,25 @@
 import os
-import hmac
+import re
+import hashlib
 import logging
 import threading
 import warnings
 from datetime import datetime, timedelta, timezone
 
-import joblib
 import numpy as np
 import pandas as pd
-import keras
-from fastapi import APIRouter, HTTPException, Depends, Header
+from fastapi import APIRouter, HTTPException, Depends, Header, Request
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 
+from cortex.app.core import security
 from cortex.app.core.database import get_db
 from cortex.app.core.models import PredictionAudit
+from cortex.app.engine.artifacts import load_inference_model, load_scaler
 from cortex.app.engine.auditor import calculate_trust_label
-from cortex.app.engine.fetcher import fetch_data, fetch_latest_rates
-from cortex.app.engine.model import WINDOW_SIZE, make_inference_model
+from cortex.app.engine.fetcher import fetch_data, fetch_latest_rates, history_window_days
+from cortex.app.engine.model import WINDOW_SIZE
 from cortex.app.schemas.forecast import PredictionRequest, SUPPORTED_CURRENCIES
 
 # Suppress cosmetic warnings from models trained before naming fix
@@ -30,6 +31,7 @@ logger = logging.getLogger("cortex.api")
 
 MODEL_CACHE = {}
 MODEL_DIR = "/app/cortex/models"
+_PAIR_CODE = re.compile(r"EUR_[A-Z]{3}")
 
 # Keras models are shared objects and predict() is not documented as safe
 # under concurrent calls. FastAPI runs sync endpoints in a threadpool, so
@@ -44,15 +46,37 @@ _MODEL_LOCK = threading.Lock()
 # Key: (from, to, days) -> (rate_date, today_str, response_dict)
 FORECAST_CACHE: dict[tuple, tuple] = {}
 FORECAST_CACHE_MAX = 512
+_FORECAST_CACHE_LOCK = threading.Lock()
+
+# Per-currency forecast legs. A leg depends only on the model and on its
+# inputs (latest price, recent returns, volatility), and each step depends
+# only on the step before, so the first N steps of a 90-day leg are exactly
+# the N-step leg. Each currency is therefore computed once per data snapshot
+# and extended to the longest horizon asked for so far: at most 90 model
+# steps per currency per snapshot, whatever mix of pairs and horizons
+# arrives. Previously every uncached (pair, horizon) request recomputed both
+# legs from scratch, and one client could keep the model busy indefinitely.
+# Key: currency -> leg dict (see _extend_leg).
+_LEG_CACHE: dict[str, dict] = {}
+
+# Requests that need model work hold one of these slots. When all are busy,
+# a request is answered 503 at once and does not queue on the model lock.
+# Forecast traffic can therefore never occupy the whole threadpool, and the
+# cheap endpoints (/rates/latest, /currencies, /health) keep answering.
+FORECAST_COMPUTE_SLOTS = 8
+_COMPUTE_SLOTS = threading.BoundedSemaphore(FORECAST_COMPUTE_SLOTS)
 
 
 def _load_model(pair_code: str):
     """Load model + scaler into cache. Returns (model, scaler).
 
-    Saved .keras files may contain a graph with dropout flagged training=True
-    (older build_model). Weights are transferred into a clean architecture so
-    inference is explicit and deterministic regardless of Keras version.
+    Both files are read by engine/artifacts.py: the model as weights only,
+    into the architecture from model.py, and the scaler through a restricted
+    unpickler. Neither file can run code when it is loaded.
     """
+    if not _PAIR_CODE.fullmatch(pair_code):
+        raise HTTPException(status_code=400, detail="Invalid pair.")
+
     with _MODEL_LOCK:
         if pair_code in MODEL_CACHE:
             return MODEL_CACHE[pair_code]
@@ -64,9 +88,8 @@ def _load_model(pair_code: str):
             raise HTTPException(status_code=503, detail=f"Model unavailable for {pair_code}.")
 
         try:
-            loaded = keras.models.load_model(model_path, compile=False)
-            model = make_inference_model(loaded, (WINDOW_SIZE, 1))
-            scaler = joblib.load(scaler_path)
+            model = load_inference_model(model_path, (WINDOW_SIZE, 1))
+            scaler = load_scaler(scaler_path)
             MODEL_CACHE[pair_code] = (model, scaler)
             logger.info(f"Loaded {pair_code} into cache.")
             return model, scaler
@@ -75,6 +98,55 @@ def _load_model(pair_code: str):
         except Exception as e:
             logger.error(f"Model load error {pair_code}: {e}")
             raise HTTPException(status_code=500, detail="Model loading failed.")
+
+
+def _snapshot_key(model, latest_price: float, daily_vol: float, recent_returns) -> str:
+    """Identifies everything a leg's values depend on."""
+    digest = hashlib.sha256()
+    digest.update(str(id(model)).encode())
+    digest.update(np.float64(latest_price).tobytes())
+    digest.update(np.float64(daily_vol).tobytes())
+    digest.update(np.ascontiguousarray(recent_returns, dtype=np.float64).tobytes())
+    return digest.hexdigest()
+
+
+def _extend_leg(target_curr: str, key: str, steps: int, model, scaler, latest_price, daily_vol, recent_returns) -> dict:
+    """Returns the cached leg for this snapshot, extended to at least `steps`.
+
+    Must be called with _MODEL_LOCK held. The loop body is the original
+    autoregressive step, unchanged; it resumes from the stored state.
+    """
+    leg = _LEG_CACHE.get(target_curr)
+    if leg is None or leg["key"] != key:
+        leg = {
+            "key": key,
+            "batch": scaler.transform(recent_returns).reshape(1, WINDOW_SIZE, 1),
+            "price": latest_price,
+            "prices": [],
+            "lower": [],
+            "upper": [],
+        }
+        _LEG_CACHE[target_curr] = leg
+
+    current_batch = leg["batch"]
+    current_price = leg["price"]
+    for _ in range(steps - len(leg["prices"])):
+        pred_scaled = model.predict(current_batch, verbose=0)[0, 0]
+        pred_return = scaler.inverse_transform([[pred_scaled]])[0, 0]
+        current_price = current_price * (1 + pred_return)
+        leg["prices"].append(current_price)
+        next_input = np.array([[[pred_scaled]]])
+        current_batch = np.concatenate([current_batch[:, 1:, :], next_input], axis=1)
+
+        # Confidence band from historical volatility (widens with sqrt of
+        # time): 80% CI ~ 1.28 standard deviations, scaled by sqrt(days).
+        i = len(leg["prices"]) - 1
+        band = current_price * daily_vol * 1.28 * np.sqrt(i + 1)
+        leg["lower"].append(current_price - band)
+        leg["upper"].append(current_price + band)
+    leg["batch"] = current_batch
+    leg["price"] = current_price
+    return leg
 
 
 def get_model_prediction(target_curr: str, steps: int):
@@ -107,29 +179,27 @@ def get_model_prediction(target_curr: str, steps: int):
     daily_vol = float(df_calc["Return"].std())
 
     recent_returns = df_calc["Return"].values[-WINDOW_SIZE:].reshape(-1, 1)
+    key = _snapshot_key(model, latest_price, daily_vol, recent_returns)
 
-    predicted_prices = []
-    current_price = latest_price
+    # A leg's lists only ever grow, and a new snapshot replaces the whole
+    # dict, so a hit can be read without waiting for the model lock.
+    leg = _LEG_CACHE.get(target_curr)
+    if leg is None or leg["key"] != key or len(leg["prices"]) < steps:
+        if not _COMPUTE_SLOTS.acquire(blocking=False):
+            raise HTTPException(
+                status_code=503,
+                detail="The forecast service is busy. Try again shortly.",
+                headers={"Retry-After": "5"},
+            )
+        try:
+            with _MODEL_LOCK:
+                leg = _extend_leg(target_curr, key, steps, model, scaler, latest_price, daily_vol, recent_returns)
+        finally:
+            _COMPUTE_SLOTS.release()
 
-    with _MODEL_LOCK:
-        current_batch = scaler.transform(recent_returns).reshape(1, WINDOW_SIZE, 1)
-        for _ in range(steps):
-            pred_scaled = model.predict(current_batch, verbose=0)[0, 0]
-            pred_return = scaler.inverse_transform([[pred_scaled]])[0, 0]
-            current_price = current_price * (1 + pred_return)
-            predicted_prices.append(current_price)
-            next_input = np.array([[[pred_scaled]]])
-            current_batch = np.concatenate([current_batch[:, 1:, :], next_input], axis=1)
-
-    # Confidence bands from historical volatility (widens with sqrt of time)
-    pred_lower = []
-    pred_upper = []
-    for i, price in enumerate(predicted_prices):
-        # 80% CI ~ 1.28 standard deviations, volatility scales with sqrt(days)
-        band = price * daily_vol * 1.28 * np.sqrt(i + 1)
-        pred_lower.append(price - band)
-        pred_upper.append(price + band)
-
+    predicted_prices = leg["prices"][:steps]
+    pred_lower = leg["lower"][:steps]
+    pred_upper = leg["upper"][:steps]
     return df, predicted_prices, pred_lower, pred_upper
 
 
@@ -149,8 +219,10 @@ def rate_history(base: str, quote: str, days: int = 30):
     days = max(5, min(days, 1830))
 
     # Fetch a buffer of extra calendar days so weekends and holidays still
-    # leave enough business-day observations, then trim to the request.
-    start = (datetime.now().date() - timedelta(days=int(days * 1.7) + 10)).isoformat()
+    # leave enough business-day observations, then trim to the request. The
+    # buffer is rounded up to one of four shared windows, so every horizon
+    # reuses the same few upstream fetches; the trimmed tail is unchanged.
+    start = (datetime.now().date() - timedelta(days=history_window_days(days))).isoformat()
     df_base = fetch_data(f"EUR{base}", start_date=start)
     df_quote = fetch_data(f"EUR{quote}", start_date=start)
     if df_base is None or df_quote is None:
@@ -245,7 +317,8 @@ def predict_forecast(request: PredictionRequest, db: Session = Depends(get_db)):
 
         cache_key = (request.from_currency, request.to_currency, request.days)
         if rate_date is not None:
-            cached = FORECAST_CACHE.get(cache_key)
+            with _FORECAST_CACHE_LOCK:
+                cached = FORECAST_CACHE.get(cache_key)
             if cached and cached[0] == rate_date and cached[1] == today_str:
                 return cached[2]
 
@@ -365,9 +438,12 @@ def predict_forecast(request: PredictionRequest, db: Session = Depends(get_db)):
         result = {"pair": f"{request.from_currency}_{request.to_currency}", "forecast": response_data}
 
         if rate_date is not None:
-            if len(FORECAST_CACHE) >= FORECAST_CACHE_MAX:
-                FORECAST_CACHE.pop(next(iter(FORECAST_CACHE)))
-            FORECAST_CACHE[cache_key] = (rate_date, today_str, result)
+            # Locked: concurrent evictions could pick the same key, and the
+            # second pop then raised KeyError, which surfaced as a 500.
+            with _FORECAST_CACHE_LOCK:
+                if len(FORECAST_CACHE) >= FORECAST_CACHE_MAX and cache_key not in FORECAST_CACHE:
+                    FORECAST_CACHE.pop(next(iter(FORECAST_CACHE)))
+                FORECAST_CACHE[cache_key] = (rate_date, today_str, result)
 
         return result
 
@@ -427,13 +503,14 @@ def get_scoreboard(db: Session = Depends(get_db)):
     return {"scoreboard": results}
 
 
-@router.post("/audit/resolve")
-def resolve_audits(x_admin_token: str = Header(None), db: Session = Depends(get_db)):
-    admin_secret = os.getenv("ADMIN_SECRET", "")
-    if not admin_secret or not x_admin_token:
-        raise HTTPException(status_code=403, detail="Unauthorized.")
-
-    if not hmac.compare_digest(x_admin_token, admin_secret):
+@router.post("/audit/resolve", include_in_schema=False)
+def resolve_audits(request: Request, x_admin_token: str = Header(None), db: Session = Depends(get_db)):
+    # Three independent checks (core/security.py): the caller must be on
+    # loopback (the cron job runs inside the container through docker exec),
+    # ADMIN_SECRET must be at least 32 characters and not a template value,
+    # and the token comparison runs in constant time for any input. nginx
+    # also answers 404 for this path, so it is unreachable from outside.
+    if not security.admin_request_permitted(request, x_admin_token):
         raise HTTPException(status_code=403, detail="Unauthorized.")
 
     pending = (

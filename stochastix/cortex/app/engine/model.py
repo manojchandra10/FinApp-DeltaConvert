@@ -7,7 +7,7 @@ logger = logging.getLogger("cortex.model")
 WINDOW_SIZE = 180
 
 
-def build_model(input_shape: tuple, mc_dropout: bool = False) -> keras.Model:
+def build_model(input_shape: tuple, mc_dropout: bool = False, compile_model: bool = True) -> keras.Model:
     """
     LSTM model for one-step-ahead return prediction.
 
@@ -18,6 +18,10 @@ def build_model(input_shape: tuple, mc_dropout: bool = False) -> keras.Model:
     deterministic and the flag only created version-dependent ambiguity.
     It has been removed. If Monte Carlo sampling is wanted later, pass
     mc_dropout=True and call the model directly (model(x)) N times.
+
+    compile_model=False skips the optimiser and loss. The API builds its
+    inference models that way: they only ever call predict(), and loading
+    weights into an uncompiled model leaves the saved optimiser state alone.
     """
     inputs = layers.Input(shape=input_shape, name="rate_input")
 
@@ -40,10 +44,11 @@ def build_model(input_shape: tuple, mc_dropout: bool = False) -> keras.Model:
     outputs = layers.Dense(1)(x)
 
     model = models.Model(inputs, outputs)
-    model.compile(
-        optimizer=keras.optimizers.Adam(learning_rate=0.001),
-        loss="mean_squared_error",
-    )
+    if compile_model:
+        model.compile(
+            optimizer=keras.optimizers.Adam(learning_rate=0.001),
+            loss="mean_squared_error",
+        )
 
     logger.info("Model architecture built.")
     return model

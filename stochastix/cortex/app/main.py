@@ -1,14 +1,14 @@
 import os
-import time
 import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from collections import defaultdict
 
 from cortex.app.api.v1 import endpoints
+from cortex.app.core import security
 from cortex.app.core.database import engine, Base
 
 logger = logging.getLogger("cortex.main")
@@ -18,27 +18,18 @@ logging.basicConfig(level=logging.INFO)
 # set in .env.
 BRAND = os.getenv("APP_BRAND", "DeltaConvert")
 
-
-# --- Rate Limiter (in-memory, per-IP) ---
-class RateLimiter:
-    def __init__(self, max_requests: int = 30, window_seconds: int = 60):
-        self.max_requests = max_requests
-        self.window = window_seconds
-        self.requests: dict[str, list[float]] = defaultdict(list)
-
-    def is_allowed(self, client_ip: str) -> bool:
-        now = time.time()
-        window_start = now - self.window
-        self.requests[client_ip] = [
-            t for t in self.requests[client_ip] if t > window_start
-        ]
-        if len(self.requests[client_ip]) >= self.max_requests:
-            return False
-        self.requests[client_ip].append(now)
-        return True
+# API docs and the OpenAPI schema are served only when the environment is
+# explicitly a development one. An unset or misspelt ENVIRONMENT counts as
+# production, so the schema can never appear on the server by accident.
+ENVIRONMENT = os.getenv("ENVIRONMENT", "production").strip().lower()
+DEV_MODE = ENVIRONMENT in {"development", "dev", "local"}
 
 
-rate_limiter = RateLimiter(max_requests=30, window_seconds=60)
+# --- Rate Limiter (in-memory, per client) ---
+# The rule is unchanged: 30 API calls per client per minute. The client is
+# the TCP peer, or the X-Real-IP that nginx sets when the peer is a trusted
+# proxy (see core/security.py).
+rate_limiter = security.RateLimiter(max_requests=30, window_seconds=60)
 
 
 @asynccontextmanager
@@ -49,6 +40,10 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         # Multiple workers may race to create tables -- safe to ignore
         logger.warning(f"Table creation skipped (likely already exists): {e}")
+
+    problem = security.admin_secret_problem(os.getenv("ADMIN_SECRET", ""))
+    if problem:
+        logger.warning(f"{problem}; the audit-resolve endpoint refuses every request until a strong secret is set.")
 
     # Load popular models into RAM and trigger TF graph compilation
     # Warm whichever models are actually present, so a partial training
@@ -76,7 +71,7 @@ async def lifespan(app: FastAPI):
             model.predict(dummy, verbose=0)
             logger.info(f"Cached + compiled EUR_{curr}")
         except Exception as e:
-            logger.warning(f"Warmup skip {curr}: {e}")
+            logger.warning(f"Warmup skip {curr}: {getattr(e, 'detail', e)}")
 
     logger.info("Cortex ready.")
     yield
@@ -88,40 +83,53 @@ app = FastAPI(
     version="1.2.0",
     description="Live reference rates and exchange rate forecasting engine.",
     lifespan=lifespan,
-    docs_url=None if os.getenv("ENVIRONMENT") == "production" else "/docs",
-    redoc_url=None if os.getenv("ENVIRONMENT") == "production" else "/redoc",
+    docs_url="/docs" if DEV_MODE else None,
+    redoc_url="/redoc" if DEV_MODE else None,
+    openapi_url="/openapi.json" if DEV_MODE else None,
 )
 
-# CORS -- reads allowed origins from env, falls back to localhost for dev
-ALLOWED_ORIGINS = os.getenv(
-    "CORS_ORIGINS",
-    "http://localhost:5173,http://localhost:3000,http://127.0.0.1:5173",
-).split(",")
+# CORS. The site calls the API on its own origin, so production needs no
+# cross-origin access at all; CORS_ORIGINS lists exact origins for the
+# cases that do (the local http.server workflow in site/README.md). No
+# credentials, and only the two headers the frontend sends.
+_DEV_ORIGINS = "http://localhost:5173,http://localhost:3000,http://127.0.0.1:5173"
+ALLOWED_ORIGINS = security.parse_cors_origins(
+    os.getenv("CORS_ORIGINS", _DEV_ORIGINS if DEV_MODE else "")
+)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[o.strip() for o in ALLOWED_ORIGINS],
-    allow_credentials=True,
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=False,
     allow_methods=["GET", "POST"],
-    allow_headers=["*"],
+    allow_headers=["Accept", "Content-Type"],
 )
 
 
 @app.middleware("http")
 async def rate_limit_middleware(request: Request, call_next):
-    if request.url.path.startswith("/api/"):
-        # X-Real-IP is set by nginx to the actual connecting address
-        # ($remote_addr) and cannot be spoofed by the client. X-Forwarded-For
-        # is client-appendable and must not be trusted for limiting.
-        client_ip = request.headers.get("X-Real-IP") or (
-            request.client.host if request.client else "unknown"
-        )
-        if not rate_limiter.is_allowed(client_ip):
+    # scope["path"] is the path the router matches. request.url.path is
+    # rebuilt from the Host header and can be emptied by a crafted Host,
+    # which used to let requests skip the limiter.
+    if request.scope.get("path", "").startswith("/api/"):
+        key = security.rate_limit_key(security.client_address(request))
+        if not rate_limiter.is_allowed(key):
             return JSONResponse(
                 status_code=429,
                 content={"detail": "Rate limit exceeded. Try again shortly."},
             )
     return await call_next(request)
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_error_handler(request: Request, exc: RequestValidationError):
+    # FastAPI's default 422 body repeats the submitted value back. Keep the
+    # field location and the message only.
+    errors = [
+        {"loc": list(error.get("loc", ())), "msg": error.get("msg", "Invalid value."), "type": error.get("type", "value_error")}
+        for error in exc.errors()
+    ]
+    return JSONResponse(status_code=422, content={"detail": errors})
 
 
 app.include_router(endpoints.router, prefix="/api/v1", tags=["Rates & Forecast"])

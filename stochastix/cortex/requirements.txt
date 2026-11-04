@@ -1,29 +1,47 @@
 # === Cortex Dependencies ===
-# Pinned for reproducible production builds
+# Pinned for reproducible production builds. Versions were chosen with
+# pip-audit (PyPI advisory data) showing no known vulnerabilities in the
+# resolved set. Re-run pip-audit before changing a pin.
 
 # --- Web Framework ---
-fastapi==0.115.6
-uvicorn==0.34.0
+# FastAPI 0.141.1 is the last release before the OpenTelemetry dependency.
+# Starlette is pinned directly because FastAPI accepts any version from
+# 0.46: releases before 1.3.1 carry published advisories, two of which
+# (Host header and request path not validated) affected this API.
+fastapi==0.141.1
+starlette==1.6.0
+uvicorn==0.54.0
+# h11 is uvicorn's HTTP parser; releases before 0.16.0 carry
+# CVE-2025-43859 (request smuggling through chunked encoding).
+h11==0.16.0
 pydantic==2.10.4
 
 # --- ML / Data ---
-tensorflow==2.16.1
-# keras is pinned explicitly: tensorflow 2.16.1 only requires keras>=3.0,
-# so without a pin each rebuild can pull a different Keras 3.x and change
+# TensorFlow 2.21 requires protobuf 6.31+ (4.25.x, which 2.16 held the
+# install to, carries CVE-2026-0994).
+tensorflow==2.21.0
+protobuf==6.33.6
+# keras is pinned explicitly: tensorflow only requires keras>=3.12, so
+# without a pin each rebuild can pull a different Keras 3.x and change
 # runtime semantics. Retrain models once after changing this pin.
 keras==3.15.0
 numpy==1.26.4
 pandas==2.2.3
-scikit-learn>=1.6.0
+# Exactly the version that wrote the scaler files. scikit-learn warns that
+# unpickling a scaler from another version may give invalid results.
+scikit-learn==1.9.0
 joblib==1.4.2
 
 # --- Database ---
 sqlalchemy==2.0.36
-psycopg2-binary==2.9.10
+psycopg2-binary==2.9.13
 
 # --- Networking ---
 # Plain requests only. requests-cache was removed: it pulled in attrs and
 # cattrs, and some resolved version combinations failed at runtime with
 # "name 'RequestsCookieJar' is not defined" while serialising a response.
 # The fetcher now keeps its own small time-based cache.
-requests==2.32.3
+# requests releases before 2.33.0 carry CVE-2024-47081 and CVE-2026-25645.
+requests==2.34.2
+# The fetcher streams with read1(), available from urllib3 2.3.
+urllib3==2.8.0
