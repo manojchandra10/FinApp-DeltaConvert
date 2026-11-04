@@ -4,9 +4,11 @@
 # training code and data logic never leave the backend.
 #
 # esbuild runs inside this stage, so Node and npm are not needed on the
-# machine doing the build.
-FROM node:20-alpine AS minify
-RUN npm install -g esbuild@0.23.0
+# machine doing the build. Node 24 is a maintained LTS line (Node 20
+# reached end of life in April 2026), and esbuild 0.28.2 is clear of the
+# development-server advisory GHSA-67mh-4wv8-2f99 that 0.23.0 carried.
+FROM node:24-alpine AS minify
+RUN npm install -g esbuild@0.28.2
 WORKDIR /work
 COPY site/ ./site/
 RUN mkdir -p /out \
@@ -17,9 +19,16 @@ RUN mkdir -p /out \
 
 # Stage 2 — nginx serves the minified site and proxies /api to the backend.
 # NGINX_CONF picks the config: the production default listens on 443 with
-# a Let's Encrypt certificate; docker-compose.override.yml swaps in the
-# HTTP-only local config when building on a laptop.
-FROM nginx:1.27-alpine
+# a Let's Encrypt certificate; compose.local.yml swaps in the HTTP-only
+# local config when building on a laptop. 1.30 is the current stable
+# branch; the tag follows its security releases on every rebuild.
+FROM nginx:1.30-alpine
 ARG NGINX_CONF=nginx/nginx.conf
 COPY ${NGINX_CONF} /etc/nginx/nginx.conf
+# Periodic reload so renewed certificates are picked up (see the script).
+# Carriage returns are stripped in case Git on Windows checked the script
+# out with CRLF line endings, which would stop the entrypoint from running it.
+COPY nginx/reload-certs.sh /docker-entrypoint.d/40-reload-certs.sh
+RUN sed -i 's/\r$//' /docker-entrypoint.d/40-reload-certs.sh \
+ && chmod 755 /docker-entrypoint.d/40-reload-certs.sh
 COPY --from=minify /out /usr/share/nginx/html

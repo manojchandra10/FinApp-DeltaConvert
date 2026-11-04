@@ -7,8 +7,13 @@
 #
 #   docker compose -f docker-compose.yml -f compose.local.yml up -d
 #
-# or through the dev.ps1 wrapper, which does exactly that. Production runs
-# plain `docker compose up -d` and reads docker-compose.yml alone.
+# or through the dev.ps1 wrapper, which does exactly that (and writes a
+# local .env with random secrets on first run). Production runs plain
+# `docker compose up -d` and reads docker-compose.yml alone.
+#
+# Every port below is published on 127.0.0.1 only, so the stack is
+# reachable from this computer and not from anyone else on the same
+# network (café or university Wi-Fi, for example).
 
 services:
 
@@ -19,6 +24,11 @@ services:
         # reads a Let's Encrypt certificate that does not exist here, so
         # nginx would refuse to start.
         NGINX_CONF: nginx/nginx.local.conf
+    # !override replaces the production list (80 and 443 on every
+    # interface); a plain list would be added to it. Needs Docker Compose
+    # 2.24.4 or later.
+    ports: !override
+      - "127.0.0.1:80:80"
     depends_on:
       cortex:
         # service_started rather than service_healthy: TensorFlow takes up
@@ -38,7 +48,7 @@ services:
     ports:
       # Direct access to the API, useful for testing endpoints without
       # going through nginx.
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     volumes:
       # Trained models land on the host rather than inside the container,
       # so they appear in stochastix\cortex\models as the trainer writes

@@ -1,0 +1,32 @@
+# Build context for the backend image. "COPY . /app/cortex/" copies this
+# whole folder, so anything that must not reach the image is listed here.
+
+# Secrets and keys
+**/.env
+**/.env.*
+**/*.pem
+**/*.key
+**/*.crt
+**/*.p12
+**/*.pfx
+**/id_rsa*
+**/id_ed25519*
+
+# Tests, caches and tooling
+tests/
+**/__pycache__/
+**/*.py[cod]
+**/.pytest_cache/
+**/.mypy_cache/
+**/.venv/
+**/venv/
+
+# Archives (the deployment guide packs models into models.tar.gz here)
+**/*.tar
+**/*.tar.gz
+**/*.tgz
+**/*.zip
+
+# Build files themselves
+Dockerfile
+.dockerignore

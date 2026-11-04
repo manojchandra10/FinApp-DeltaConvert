@@ -6,23 +6,36 @@
 # volumes (deltaconvert_postgres_data, deltaconvert_certbot_certs) keep
 # working with no data migration.
 #
-# .env is optional. Without it the stack starts on the local defaults
-# below, which is fine for development. Production should have a .env
-# with real secrets; the values here are deliberately weak and obvious.
-# ADMIN_SECRET has no default on purpose, so the audit-resolve endpoint
-# refuses every request until a real one is set.
+# .env is required. Compose refuses to start without POSTGRES_PASSWORD,
+# so no deployment can fall back to a password printed in this repository.
+# On a laptop, dev.ps1 writes a .env with random local secrets. On a
+# server, write it by hand (see .env.example and README-DEPLOYMENT.md):
 #
 #   POSTGRES_USER=...
-#   POSTGRES_PASSWORD=...
+#   POSTGRES_PASSWORD=...        required
 #   POSTGRES_DB=...
-#   ADMIN_SECRET=...
+#   ADMIN_SECRET=...             32+ random characters, or the audit stays locked
 #   DOMAIN=deltaconvert.com
+#
+# Each container receives only the variables it needs, listed under its
+# environment key; .env is not passed in whole.
 
 name: deltaconvert
+
+# Docker's json-file driver never rotates on its own. Request logs would
+# grow until the disk filled (stopping Postgres with everything else) and
+# would keep visitor addresses indefinitely. 5 files of 10 MB per container.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
 
 services:
 
   # === REVERSE PROXY (serves the static site and proxies /api) ===
+  # The image reloads nginx every 6 hours so renewed certificates take
+  # effect (nginx/reload-certs.sh; NGINX_RELOAD_INTERVAL overrides it).
   nginx:
     build:
       context: .
@@ -39,6 +52,9 @@ services:
       - certbot_certs:/etc/letsencrypt:ro
     networks:
       - frontend
+    security_opt:
+      - no-new-privileges:true
+    logging: *default-logging
     restart: unless-stopped
     deploy:
       resources:
@@ -49,21 +65,27 @@ services:
   cortex:
     build: ./stochastix/cortex
     container_name: dc_cortex
-    env_file:
-      - path: .env
-        required: false
     environment:
-      - DATABASE_URL=postgresql://${POSTGRES_USER:-deltaconvert}:${POSTGRES_PASSWORD:-localdev}@db:5432/${POSTGRES_DB:-deltaconvert}
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-deltaconvert}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env (see .env.example)}@db:5432/${POSTGRES_DB:-deltaconvert}
       - ENVIRONMENT=production
       - ADMIN_SECRET=${ADMIN_SECRET:-}
       - APP_BRAND=${APP_BRAND:-DeltaConvert}
-      - CORS_ORIGINS=https://${DOMAIN:-deltaconvert.com},https://www.${DOMAIN:-deltaconvert.com},http://localhost
+      - CORS_ORIGINS=https://${DOMAIN:-deltaconvert.com},https://www.${DOMAIN:-deltaconvert.com}
+      # Empty means all 29 currencies; see compose.local.yml for a short list.
+      - CURRENCIES=${CURRENCIES:-}
     depends_on:
       db:
         condition: service_healthy
     networks:
       - frontend
       - backend
+    # The API runs as an unprivileged user (see its Dockerfile) and needs
+    # no Linux capabilities at all.
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    logging: *default-logging
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 30s
@@ -80,17 +102,17 @@ services:
   db:
     image: postgres:15-alpine
     container_name: dc_postgres
-    env_file:
-      - path: .env
-        required: false
     environment:
       - POSTGRES_USER=${POSTGRES_USER:-deltaconvert}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-localdev}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env (see .env.example)}
       - POSTGRES_DB=${POSTGRES_DB:-deltaconvert}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
       - backend
+    security_opt:
+      - no-new-privileges:true
+    logging: *default-logging
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-deltaconvert} -d ${POSTGRES_DB:-deltaconvert}"]
       interval: 5s
@@ -103,12 +125,16 @@ services:
           memory: 512M
 
   # === CERTBOT (SSL certificate renewal) ===
+  # Pinned: an untagged image could bring a different release on every pull.
   certbot:
-    image: certbot/certbot
+    image: certbot/certbot:v5.8.0
     container_name: dc_certbot
     volumes:
       - certbot_webroot:/var/www/certbot
       - certbot_certs:/etc/letsencrypt
+    security_opt:
+      - no-new-privileges:true
+    logging: *default-logging
     entrypoint: "/bin/sh -c 'trap exit TERM; while :; do sleep 12h & wait $${!}; certbot renew --quiet; done'"
     restart: unless-stopped
 

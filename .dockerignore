@@ -1,0 +1,9 @@
+# Build context for Dockerfile.nginx, whose context is the repository root.
+# The image needs only site/ and nginx/. Everything else stays out of the
+# build context: .env and any other secrets above all, but also the models,
+# the backend code and the Git history.
+*
+!site/
+!site/**
+!nginx/
+!nginx/**
