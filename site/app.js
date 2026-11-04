@@ -96,7 +96,8 @@
   async function getHistory(base, quote, days) {
     const key = `${base}/${quote}/${days}`;
     if (historyCache.has(key)) return historyCache.get(key);
-    const data = await fetchJson(`/rates/history?base=${base}&quote=${quote}&days=${days}`);
+    const query = new URLSearchParams({ base, quote, days: String(days) });
+    const data = await fetchJson(`/rates/history?${query.toString()}`);
     historyCache.set(key, data.points);
     return data.points;
   }
@@ -104,6 +105,10 @@
   function clearLiveCaches() {
     latestRatesCache = null;
     historyCache.clear();
+  }
+
+  function isCurrencyCode(value) {
+    return typeof value === 'string' && /^[A-Z]{3}$/.test(value);
   }
 
   function symbolFor(code) {
@@ -155,7 +160,7 @@
       const select = document.getElementById(id);
       if (!select) return;
       const previous = select.value;
-      select.innerHTML = CURRENCIES.map(code => `<option value="${code}">${code}</option>`).join('');
+      select.innerHTML = CURRENCIES.map(code => `<option value="${escapeHtml(code)}">${escapeHtml(code)}</option>`).join('');
       const preferred = ROLES[id] === 'from' ? ['GBP', 'EUR', 'USD'] : ['EUR', 'USD', 'INR'];
       const fallback = preferred.find(code => CURRENCIES.includes(code))
         || CURRENCIES[ROLES[id] === 'from' ? 0 : 1] || CURRENCIES[0];
@@ -183,26 +188,35 @@
   async function loadCapabilities() {
     try {
       const data = await fetchJson('/currencies');
-      if (Array.isArray(data.supported) && data.supported.length >= 2) {
+      // Codes from the API end up in markup and request URLs, so only
+      // three-letter codes are accepted, whatever the backend sends.
+      const listed = Array.isArray(data.supported) ? data.supported.filter(isCurrencyCode) : [];
+      if (listed.length >= 2) {
         // EUR is the base every rate is quoted against; a payload without
         // it means the backend is misconfigured, and dropping EUR from the
         // interface would break the default pair and the sample fallbacks
         // too. Keep the interface whole and let the rate lookups fall back
         // to sample figures for anything the backend cannot price.
-        const supported = data.supported.includes('EUR')
-          ? data.supported
-          : [...data.supported, 'EUR'].sort();
+        const supported = listed.includes('EUR')
+          ? listed
+          : [...listed, 'EUR'].sort();
         const changed = supported.join(',') !== CURRENCIES.join(',');
         CURRENCIES = supported;
         if (changed) populateCurrencySelects(true);
       }
-      FORECASTABLE = Array.isArray(data.forecastable) ? data.forecastable : null;
+      FORECASTABLE = Array.isArray(data.forecastable) ? data.forecastable.filter(isCurrencyCode) : null;
     } catch (error) {
       FORECASTABLE = null;   // offline: assume nothing and say so on demand
     }
   }
 
   const CATEGORY_COLOURS = { Technology: '#66f2e0', Healthcare: '#fc6540', Financials: '#2cb4a4', Infrastructure: '#18785d', Cash: '#cfcfc9', Energy: '#fc6540' };
+
+  // Category names come from stored data, so names such as "constructor"
+  // or "__proto__" must not reach Object.prototype through a plain lookup.
+  function categoryColour(category) {
+    return Object.prototype.hasOwnProperty.call(CATEGORY_COLOURS, category) ? CATEGORY_COLOURS[category] : '#cfcfc9';
+  }
 
   function cryptoId() {
     return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`;
@@ -211,7 +225,15 @@
   function readStore(key, fallback) {
     try {
       const value = localStorage.getItem(key);
-      return value ? JSON.parse(value) : structuredClone(fallback);
+      if (!value) return structuredClone(fallback);
+      const parsed = JSON.parse(value);
+      // Stored data is outside the page's control (another script, an old
+      // version, a hand edit). A value of the wrong shape falls back to the
+      // defaults, so the page keeps working.
+      const sameShape = Array.isArray(fallback)
+        ? Array.isArray(parsed)
+        : parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed);
+      return sameShape ? parsed : structuredClone(fallback);
     } catch (error) {
       return JSON.parse(JSON.stringify(fallback));
     }
@@ -544,7 +566,7 @@
       const unit = this.model.unit || '';
       const lines = [
         `<strong>${formatRate(row.rate)}${unit ? ` <em>${escapeHtml(unit)}</em>` : ''}</strong>`,
-        `<span>${dayLabel(row.date)}${isForecast ? ' · forecast' : ''}</span>`
+        `<span>${escapeHtml(dayLabel(row.date))}${isForecast ? ' · forecast' : ''}</span>`
       ];
       if (isForecast) lines.push(`<span>80% band ${formatRate(row.lower)} – ${formatRate(row.upper)}</span>`);
       this.tooltip.innerHTML = lines.join('');
@@ -1520,7 +1542,7 @@
     if (!body) return;
     const holdings = readStore(STORAGE.portfolio, DEFAULT_PORTFOLIO);
     const total = holdings.reduce((sum, item) => sum + item.units * item.price, 0);
-    const sorted = [...holdings].sort((a, b) => portfolioSortDescending ? (b.units * b.price) - (a.units * a.price) : a.symbol.localeCompare(b.symbol));
+    const sorted = [...holdings].sort((a, b) => portfolioSortDescending ? (b.units * b.price) - (a.units * a.price) : String(a.symbol).localeCompare(String(b.symbol)));
     document.querySelector('[data-portfolio-total]').textContent = formatNumber(total, 0);
     document.querySelector('[data-allocation-count]').textContent = String(holdings.length);
     document.getElementById('holdingsEmpty').hidden = holdings.length > 0;
@@ -1528,7 +1550,7 @@
       const value = item.units * item.price;
       const weight = total ? value / total * 100 : 0;
       return `<tr>
-        <td><div class="holding-name"><span class="holding-icon" style="--holding-colour:${CATEGORY_COLOURS[item.category] || '#cfcfc9'}">${escapeHtml(item.symbol.slice(0, 2))}</span><span><strong>${escapeHtml(item.symbol)}</strong><small>${escapeHtml(item.name)}</small></span></div></td>
+        <td><div class="holding-name"><span class="holding-icon" style="--holding-colour:${categoryColour(item.category)}">${escapeHtml(String(item.symbol).slice(0, 2))}</span><span><strong>${escapeHtml(item.symbol)}</strong><small>${escapeHtml(item.name)}</small></span></div></td>
         <td>${formatNumber(item.units, item.units % 1 ? 2 : 0)}</td>
         <td>${formatMoney(item.price)}</td>
         <td><strong>${formatMoney(value)}</strong></td>
@@ -1546,10 +1568,10 @@
     if (!canvas || !legend) return;
     const holdings = readStore(STORAGE.portfolio, DEFAULT_PORTFOLIO);
     const categoryValues = holdings.reduce((accumulator, item) => {
-      accumulator[item.category] = (accumulator[item.category] || 0) + item.units * item.price;
+      accumulator.set(item.category, (accumulator.get(item.category) || 0) + item.units * item.price);
       return accumulator;
-    }, {});
-    const segments = Object.entries(categoryValues).map(([category, value]) => ({ label: category, value, colour: CATEGORY_COLOURS[category] || '#cfcfc9' }));
+    }, new Map());
+    const segments = [...categoryValues].map(([category, value]) => ({ label: category, value, colour: categoryColour(category) }));
     const total = segments.reduce((sum, segment) => sum + segment.value, 0) || 1;
     let geometry = drawDoughnut(canvas, segments);
     legend.innerHTML = segments.map(segment => `<span data-slice="${escapeHtml(segment.label)}"><span><i style="--legend-colour:${segment.colour}"></i>${escapeHtml(segment.label)}</span><b>${formatNumber(segment.value / total * 100, 0)}%</b></span>`).join('');
@@ -1619,7 +1641,16 @@
   function exportPortfolio() {
     const holdings = readStore(STORAGE.portfolio, DEFAULT_PORTFOLIO);
     const rows = [['Ticker', 'Company', 'Units', 'Price GBP', 'Value GBP', 'Day %', 'Category'], ...holdings.map(item => [item.symbol, item.name, item.units, item.price, item.units * item.price, item.day, item.category])];
-    const csv = rows.map(row => row.map(value => `"${String(value).replaceAll('"', '""')}"`).join(',')).join('\n');
+    // Spreadsheets evaluate a text cell that starts with =, +, -, @, tab or
+    // carriage return as a formula (HYPERLINK can send cell contents to
+    // another site). Such text gets a leading apostrophe, which spreadsheets
+    // treat as "show as text"; numbers are written unchanged.
+    const csvCell = value => {
+      let text = String(value);
+      if (typeof value !== 'number' && /^[=+\-@\t\r]/.test(text)) text = `'${text}`;
+      return `"${text.replaceAll('"', '""')}"`;
+    };
+    const csv = rows.map(row => row.map(csvCell).join(',')).join('\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement('a');
@@ -1678,13 +1709,13 @@
       const remove = event.target.closest('[data-delete-alert]');
       if (toggle) {
         const alerts = readStore(STORAGE.alerts, DEFAULT_ALERTS);
-        const alert = alerts.find(item => item.id === toggle.dataset.toggleAlert);
+        const alert = alerts.find(item => String(item.id) === toggle.dataset.toggleAlert);
         if (alert) alert.active = !alert.active;
         writeStore(STORAGE.alerts, alerts);
         renderAlerts();
       }
       if (remove) {
-        const alerts = readStore(STORAGE.alerts, DEFAULT_ALERTS).filter(item => item.id !== remove.dataset.deleteAlert);
+        const alerts = readStore(STORAGE.alerts, DEFAULT_ALERTS).filter(item => String(item.id) !== remove.dataset.deleteAlert);
         writeStore(STORAGE.alerts, alerts);
         renderAlerts();
         toast('Rule removed', 'The local alert list has been updated.');
@@ -1725,10 +1756,10 @@
     container.innerHTML = alerts.length ? alerts.map(alert => {
       const unitText = alert.unit === '%' ? '%' : alert.unit && !['rate', 'level'].includes(alert.unit) ? ` ${alert.unit}` : '';
       return `<div class="saved-rule">
-        <button class="rule-toggle ${alert.active ? 'is-active' : ''}" type="button" data-toggle-alert="${alert.id}" aria-label="${alert.active ? 'Pause' : 'Start'} alert"></button>
+        <button class="rule-toggle ${alert.active ? 'is-active' : ''}" type="button" data-toggle-alert="${escapeHtml(alert.id)}" aria-label="${alert.active ? 'Pause' : 'Start'} alert"></button>
         <span class="rule-copy"><strong>${escapeHtml(alert.asset)} ${escapeHtml(alert.condition)} ${escapeHtml(alert.threshold)}${escapeHtml(unitText)}</strong><small>${alert.active ? 'Active' : 'Paused'}</small></span>
         <span class="rule-channel">${escapeHtml(alert.channel)}</span>
-        <button class="rule-delete" type="button" data-delete-alert="${alert.id}" aria-label="Delete alert">×</button>
+        <button class="rule-delete" type="button" data-delete-alert="${escapeHtml(alert.id)}" aria-label="Delete alert">×</button>
       </div>`;
     }).join('') : '<div class="rules-empty">No rules yet. Use the studio above to create one.</div>';
   }
