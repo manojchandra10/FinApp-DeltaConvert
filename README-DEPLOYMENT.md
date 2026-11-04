@@ -7,19 +7,47 @@ the static multi-page site in `site/` (plain HTML, CSS and JS). The old
 React app in `stochastix/interface/` is retired and should be deleted.
 
 ## Server Details
-- **Server:** Hetzner CX43 (8 vCPU, 16GB RAM, 160GB SSD)
-- **IP:** 204.168.221.119
-- **Location:** Helsinki, Finland
-- **OS:** Ubuntu 24.04
-- **Domain:** deltaconvert.com (DNS on Namecheap)
-- **SSL:** Let's Encrypt — the previously noted expiry (2026-06-30) has
-  passed, so verify renewal before anything else (see "SSL certificate")
-- **Cost:** €12.49/month
 
-Note on access: deployment below uses the root account because that is how
-the server is currently set up. A safer arrangement is a non-root user with
-docker group membership and SSH key-only login. Worth doing before promoting
-the site anywhere.
+The previous server has been deleted. Server addresses, logins and hosting
+details are not recorded in this repository: a public address next to a
+root login pattern invites password guessing. The commands below use two
+shell variables, set once per session on your own machine:
+
+```bash
+SERVER=deploy@your.server.address     # the deploy user, never root
+REMOTE_DIR=/srv/deltaconvert           # where the project lives on the server
+```
+
+In PowerShell: `$SERVER = "deploy@your.server.address"` and
+`$REMOTE_DIR = "/srv/deltaconvert"`.
+
+- **OS:** Ubuntu 24.04 LTS (or newer)
+- **Domain:** deltaconvert.com
+- **SSL:** Let's Encrypt, renewed by the certbot container and picked up by
+  nginx automatically (see "SSL certificate")
+
+Set up a new server with the steps in "SERVER HARDENING" before anything is
+deployed to it.
+
+---
+
+## SECURITY RELEASE (read before the next deployment)
+
+This release fixes the issues listed in SECURITY-REPORT.md. Four steps are
+needed when the stack is next deployed:
+
+1. **Write `.env` with strong secrets.** Compose now refuses to start
+   without `POSTGRES_PASSWORD`, and the audit endpoint stays locked unless
+   `ADMIN_SECRET` has 32 or more random characters. Generate each value
+   with `openssl rand -hex 32` (see `.env.example`). Never reuse the
+   values from a laptop.
+2. **Rebuild both images without cache**, because dependencies, both
+   Dockerfiles and the nginx configuration changed:
+   `docker compose build --no-cache && docker compose up -d`
+3. **Install the new cron command** from "DAILY AUDIT CRON JOB". The old
+   one passed the token on the host's command line.
+4. **Harden the server first** ("SERVER HARDENING"). Earlier copies of
+   this guide published the old server's address and a root login.
 
 ---
 
@@ -28,11 +56,14 @@ the site anywhere.
 ```
 D:\DeltaConvert_Deployment\
 ├── docker-compose.yml
-├── docker-compose.override.yml ← LOCAL ONLY (never upload this)
+├── compose.local.yml           ← LOCAL ONLY overlay (used by dev.ps1)
+├── dev.ps1                     ← runs the local stack; writes a local .env
 ├── Dockerfile.nginx            ← builds the site image (minifies JS/CSS)
-├── .env                        ← LOCAL ONLY (never upload this)
-├── .env.example                ← template for a new .env
+├── .dockerignore               ← keeps .env and everything but site/ and nginx/ out of the nginx build
+├── .env                        ← secrets for one machine; never upload or commit
+├── .env.example                ← template for a new .env (no secrets in it)
 ├── START-LOCAL.md              ← running the stack on Windows
+├── SECURITY-REPORT.md          ← security review: findings, fixes, evidence
 │
 ├── site\                       ← static frontend (the live site)
 │   ├── index.html  exchange.html
@@ -44,25 +75,30 @@ D:\DeltaConvert_Deployment\
 │
 ├── stochastix\
 │   └── cortex\                 ← FastAPI backend
-│       ├── Dockerfile          ← python:3.11-slim, uvicorn on 8000
+│       ├── Dockerfile          ← python:3.11-slim, non-root user, uvicorn on 8000
+│       ├── .dockerignore       ← keeps secrets, tests and archives out of the image
 │       ├── requirements.txt
 │       ├── models\             ← 29 .keras + 29 .joblib files
+│       ├── tests\              ← security regression tests (not in the image)
 │       └── app\
 │           ├── main.py
+│           ├── resolve_audits.py ← daily audit command for cron
 │           ├── api\v1\endpoints.py
-│           ├── core\           ← database.py, models.py
-│           ├── engine\         ← trainer.py, fetcher.py, model.py, auditor.py
+│           ├── core\           ← database.py, models.py, security.py
+│           ├── engine\         ← trainer.py, fetcher.py, model.py, auditor.py, artifacts.py
 │           └── schemas\forecast.py
 │
 └── nginx\
     ├── nginx.conf              ← production, HTTPS on 443
-    └── nginx.local.conf        ← local, plain HTTP on 80
+    ├── nginx.local.conf        ← local, plain HTTP on 80
+    └── reload-certs.sh         ← reloads nginx every 6 h so renewed certificates load
 ```
 
-`stochastix\interface\` (React) no longer exists in this tree. `.env`
-keeps its existing secrets; `FLASK_SECRET_KEY` is no longer read by
-anything and can be deleted. Optionally add `DOMAIN=deltaconvert.com`
-(the compose file defaults to that value anyway).
+`stochastix\interface\` (React) no longer exists in this tree. On a new
+server, write `.env` from `.env.example` with freshly generated secrets
+(see "SECURITY RELEASE"). `FLASK_SECRET_KEY` is no longer read by anything
+and does not belong in it. `DOMAIN=deltaconvert.com` is optional (the
+compose file defaults to that value anyway).
 
 ---
 
@@ -91,8 +127,8 @@ to `deltaconvert`, which matches what the old stack used, so the Postgres
 data and certificates carry over untouched.
 
 ```bash
-ssh root@204.168.221.119
-cd /root/deltaconvert
+ssh $SERVER
+cd $REMOTE_DIR
 
 # 1. Stop the stack
 docker compose down
@@ -121,7 +157,8 @@ docker image prune -af   # drops the old converter image among others
 docker ps -a | grep dc_converter   # expect no output
 ```
 
-The cron entry already references `dc_cortex` and needs no change.
+Then install the cron entry from "DAILY AUDIT CRON JOB"; the command
+changed in this release.
 
 ---
 
@@ -167,42 +204,52 @@ If the certificate has lapsed:
 docker compose stop nginx
 docker run --rm -p 80:80 \
   -v deltaconvert_certbot_certs:/etc/letsencrypt \
-  certbot/certbot renew
+  certbot/certbot:v5.8.0 renew
 docker compose start nginx
 ```
 
-The certbot container renews on a 12-hour loop after that.
+The certbot container renews on a 12-hour loop after that. nginx reads
+certificates only when it starts or reloads, so the nginx image reloads
+itself every 6 hours (`nginx/reload-certs.sh`); a renewed certificate is
+in use within 6 hours without any manual step. To load one at once:
+
+```bash
+docker exec dc_nginx nginx -s reload
+```
 
 ---
 
 ## LOCAL TESTING (VS Code Terminal)
 
+`dev.ps1` runs Compose with the local overlay (`compose.local.yml`). On
+its first run it writes a `.env` with random local secrets.
+
 ```powershell
 cd D:\DeltaConvert_Deployment
-docker compose up --build -d
-docker compose ps
-docker compose logs -f          # all containers
-docker compose logs cortex      # just the API
-docker compose down
+.\dev.ps1 up --build -d
+.\dev.ps1 ps
+.\dev.ps1 logs -f               # all containers
+.\dev.ps1 logs cortex           # just the API
+.\dev.ps1 down
 ```
 
 Rebuild a single container after changes:
 
 ```powershell
-# site/ or nginx.conf changed → rebuild nginx
-docker compose build --no-cache nginx
-docker compose up -d nginx
+# site/ or nginx.local.conf changed → rebuild nginx
+.\dev.ps1 build --no-cache nginx
+.\dev.ps1 up -d nginx
 
 # API changes → rebuild cortex
-docker compose build --no-cache cortex
-docker compose up -d cortex
+.\dev.ps1 build --no-cache cortex
+.\dev.ps1 up -d cortex
 ```
 
 Quick restart when only .py files changed (Dockerfile and requirements
 untouched):
 
 ```powershell
-docker compose restart cortex
+.\dev.ps1 restart cortex
 ```
 
 Test URLs locally:
@@ -215,10 +262,12 @@ http://localhost/api/v1/rates/history?base=GBP&quote=EUR&days=30
 http://localhost/health
 ```
 
-Two files apply on a laptop only and must never reach the server:
-`docker-compose.override.yml` (HTTP-only nginx, relaxed health gate,
-published port 8000) and `nginx/nginx.local.conf`. Full Windows
-instructions are in `START-LOCAL.md`.
+The local overlay applies on a laptop only: `compose.local.yml`
+(HTTP-only nginx, relaxed health gate, API docs on, port 8000) used with
+`nginx/nginx.local.conf`. It publishes every port on 127.0.0.1, so the
+stack is not reachable from other machines on the same network. It is
+inert unless named explicitly, and the server runs plain
+`docker compose`. Full Windows instructions are in `START-LOCAL.md`.
 
 To run the frontend without Docker against a bare uvicorn backend, see
 "Run locally" in `site/README.md` (one meta-tag change plus
@@ -250,56 +299,56 @@ different Keras major version should be retrained rather than reused.
 
 ## DEPLOY TO SERVER (Windows PowerShell)
 
+Set `$SERVER` and `$REMOTE_DIR` first (see "Server Details"). Files go to
+the deploy user's project folder; nothing is copied as root.
+
 ```powershell
 # Frontend — the whole static site in one go
-scp -r D:\DeltaConvert_Deployment\site root@204.168.221.119:/root/deltaconvert/
+scp -r D:\DeltaConvert_Deployment\site "${SERVER}:${REMOTE_DIR}/"
 
-# API files
-scp D:\DeltaConvert_Deployment\stochastix\cortex\app\main.py root@204.168.221.119:/root/deltaconvert/stochastix/cortex/app/main.py
-scp D:\DeltaConvert_Deployment\stochastix\cortex\app\api\v1\endpoints.py root@204.168.221.119:/root/deltaconvert/stochastix/cortex/app/api/v1/endpoints.py
-scp D:\DeltaConvert_Deployment\stochastix\cortex\app\core\models.py root@204.168.221.119:/root/deltaconvert/stochastix/cortex/app/core/models.py
-scp D:\DeltaConvert_Deployment\stochastix\cortex\app\engine\fetcher.py root@204.168.221.119:/root/deltaconvert/stochastix/cortex/app/engine/fetcher.py
-scp D:\DeltaConvert_Deployment\stochastix\cortex\app\engine\model.py root@204.168.221.119:/root/deltaconvert/stochastix/cortex/app/engine/model.py
-scp D:\DeltaConvert_Deployment\stochastix\cortex\app\engine\auditor.py root@204.168.221.119:/root/deltaconvert/stochastix/cortex/app/engine/auditor.py
-scp D:\DeltaConvert_Deployment\stochastix\cortex\requirements.txt root@204.168.221.119:/root/deltaconvert/stochastix/cortex/requirements.txt
+# Backend — the app package, requirements, Dockerfile and .dockerignore
+scp -r D:\DeltaConvert_Deployment\stochastix\cortex\app "${SERVER}:${REMOTE_DIR}/stochastix/cortex/"
+scp D:\DeltaConvert_Deployment\stochastix\cortex\requirements.txt D:\DeltaConvert_Deployment\stochastix\cortex\Dockerfile D:\DeltaConvert_Deployment\stochastix\cortex\.dockerignore "${SERVER}:${REMOTE_DIR}/stochastix/cortex/"
 
-# Infrastructure — note that docker-compose.override.yml is deliberately absent
-scp D:\DeltaConvert_Deployment\docker-compose.yml root@204.168.221.119:/root/deltaconvert/docker-compose.yml
-scp D:\DeltaConvert_Deployment\Dockerfile.nginx root@204.168.221.119:/root/deltaconvert/Dockerfile.nginx
-scp D:\DeltaConvert_Deployment\nginx\nginx.conf root@204.168.221.119:/root/deltaconvert/nginx/nginx.conf
-scp D:\DeltaConvert_Deployment\stochastix\cortex\Dockerfile root@204.168.221.119:/root/deltaconvert/stochastix/cortex/Dockerfile
+# Infrastructure. compose.local.yml, dev.ps1 and .env are deliberately
+# absent: the server gets its own .env, written there by hand.
+scp D:\DeltaConvert_Deployment\docker-compose.yml D:\DeltaConvert_Deployment\Dockerfile.nginx D:\DeltaConvert_Deployment\.dockerignore "${SERVER}:${REMOTE_DIR}/"
+scp D:\DeltaConvert_Deployment\nginx\nginx.conf D:\DeltaConvert_Deployment\nginx\reload-certs.sh "${SERVER}:${REMOTE_DIR}/nginx/"
 ```
 
-If the server already has a working `stochastix/cortex/Dockerfile`, keep
-it and skip that last line. The version in this tree was reconstructed to
-match the layout the code expects (`/app/cortex/models`, `PYTHONPATH=/app`,
-uvicorn on `cortex.app.main:app`).
+On the server, protect the secrets file once: `chmod 600 $REMOTE_DIR/.env`.
 
 Model upload after retraining:
 
 ```powershell
 cd D:\DeltaConvert_Deployment\stochastix\cortex
 tar -czf models.tar.gz models
-scp models.tar.gz root@204.168.221.119:/root/deltaconvert/stochastix/cortex/models.tar.gz
-# then on the server: tar -xzf models.tar.gz && rm models.tar.gz
+scp models.tar.gz "${SERVER}:${REMOTE_DIR}/stochastix/cortex/models.tar.gz"
+Remove-Item models.tar.gz
+# then on the server, in $REMOTE_DIR/stochastix/cortex:
+#   tar -xzf models.tar.gz --no-same-owner && rm models.tar.gz
 ```
 
-Rebuild on server after SSH:
+The backend loads model and scaler files without executing anything in
+them (`engine/artifacts.py`). If a file is refused, `docker compose logs
+cortex` names it, and retraining that currency replaces it.
+
+Rebuild on server after SSH. Code and models are copied into the backend
+image at build time, so a plain restart keeps running the old image: every
+backend change needs a build.
 
 ```bash
-cd /root/deltaconvert
+cd $REMOTE_DIR
 
-# site/ or nginx.conf changed:
+# site/ or nginx files changed:
 docker compose build --no-cache nginx && docker compose up -d nginx
 
-# API code changed (no dependency changes):
-docker compose restart cortex
+# API code or models changed (no dependency changes); the dependency
+# layer comes from cache, so this is quick:
+docker compose up -d --build cortex
 
 # Dockerfile or requirements.txt changed:
 docker compose build --no-cache cortex && docker compose up -d cortex
-
-# Models updated:
-docker compose restart cortex
 ```
 
 Checks:
@@ -310,6 +359,7 @@ docker compose logs cortex --tail 20
 curl -s https://deltaconvert.com/health
 curl -s https://deltaconvert.com/api/v1/rates/latest | head -c 300
 curl -s "https://deltaconvert.com/api/v1/rates/history?base=GBP&quote=EUR&days=7" | head -c 300
+curl -sI https://deltaconvert.com/app.js | grep -i -E "content-security-policy|strict-transport-security"
 ```
 
 ---
@@ -333,19 +383,100 @@ in winter; in summer publication lands at 14:00 UTC, which leaves even
 more. If audits ever show "rate unavailable", the publication slipped that
 day — re-run manually or shift the cron later.
 
+The command runs inside the backend container and reads the token from
+that container's own environment, so the token never appears on the
+host's command line, in `ps` output or in shell history. The endpoint
+accepts calls from inside the container only, and nginx answers 404 for
+it.
+
 ```bash
-crontab -l    # entry references dc_cortex and is unchanged
+crontab -e    # as the deploy user, then add this line:
+0 18 * * * docker exec dc_cortex python -m cortex.app.resolve_audits >> $HOME/deltaconvert-audit.log 2>&1
 
 # Manual resolve
-ADMIN_KEY=$(grep ADMIN_SECRET /root/deltaconvert/.env | cut -d= -f2)
-docker exec dc_cortex python -c "
-import urllib.request
-req = urllib.request.Request('http://localhost:8000/api/v1/audit/resolve', method='POST')
-req.add_header('x-admin-token', '$ADMIN_KEY')
-resp = urllib.request.urlopen(req)
-print(resp.read().decode())
-"
+docker exec dc_cortex python -m cortex.app.resolve_audits
 ```
+
+A 403 means `ADMIN_SECRET` in `.env` is missing, shorter than 32
+characters or a template value. The API logs which at start-up.
+
+---
+
+## SERVER HARDENING (new server, before the first deployment)
+
+Run as root on the first login only. Install Docker Engine from Docker's
+own apt repository first.
+
+```bash
+# 1. A deploy user with your SSH key, which runs Docker without root.
+adduser --disabled-password --gecos "" deploy
+install -d -m 700 -o deploy -g deploy /home/deploy/.ssh
+install -m 600 -o deploy -g deploy /root/.ssh/authorized_keys /home/deploy/.ssh/authorized_keys
+usermod -aG docker deploy
+install -d -o deploy -g deploy /srv/deltaconvert
+
+# 2. Key-only SSH and no root login. Open a second session as deploy and
+#    check it works before closing this one.
+cat > /etc/ssh/sshd_config.d/10-hardening.conf <<'EOF'
+PermitRootLogin no
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+EOF
+sshd -t && systemctl restart ssh
+
+# 3. Firewall: SSH, HTTP and HTTPS only.
+ufw default deny incoming
+ufw default allow outgoing
+ufw allow OpenSSH
+ufw allow 80/tcp
+ufw allow 443/tcp
+ufw enable
+
+# 4. Automatic security updates and SSH brute-force protection.
+apt update && apt install -y unattended-upgrades fail2ban
+dpkg-reconfigure -f noninteractive unattended-upgrades
+systemctl enable --now fail2ban
+```
+
+Notes:
+
+- Docker inserts its own firewall rules for published ports, ahead of
+  ufw's. Only nginx publishes ports (80 and 443). Keep it that way and
+  never publish 5432 or 8000 on the server.
+- Membership of the `docker` group is equivalent to root on the host.
+  Give it to the deploy user only and keep that user's SSH key safe.
+- If the hosting provider offers a network firewall, open only 22, 80
+  and 443 there as well.
+- If the server has an IPv6 address, check the nginx access log once
+  (`docker compose logs nginx`): IPv6 visitors should appear with their
+  own addresses. If they all appear as one Docker gateway address (such
+  as 172.18.0.1), Docker is forwarding IPv6 through its userland proxy,
+  and all IPv6 visitors share one rate limit.
+
+---
+
+## OPTIONAL: LEAST-PRIVILEGE DATABASE ROLE
+
+The API connects as the Postgres superuser that the image creates from
+`POSTGRES_USER`. No SQL injection was found (every query goes through the
+SQLAlchemy ORM with bound parameters), but a role limited to the audit
+table narrows what any future bug could reach. With the stack running
+once (so the table exists):
+
+```bash
+docker exec -it dc_postgres psql -U $POSTGRES_USER -d $POSTGRES_DB
+```
+
+```sql
+CREATE ROLE cortex_app LOGIN PASSWORD 'paste a new value from openssl rand -hex 32';
+GRANT CONNECT ON DATABASE deltaconvert TO cortex_app;
+GRANT USAGE ON SCHEMA public TO cortex_app;
+GRANT SELECT, INSERT, UPDATE ON prediction_audits TO cortex_app;
+GRANT USAGE, SELECT ON SEQUENCE prediction_audits_id_seq TO cortex_app;
+```
+
+Then add `APP_DB_PASSWORD` to `.env` and change the cortex `DATABASE_URL`
+in `docker-compose.yml` to `postgresql://cortex_app:${APP_DB_PASSWORD}@db:5432/...`.
 
 ---
 
@@ -356,7 +487,8 @@ free -h                      # memory
 df -h                        # disk
 docker stats --no-stream     # per-container usage
 docker system prune -af      # clean old images
-apt update && apt upgrade -y # Ubuntu security updates
+sudo apt update && sudo apt upgrade -y   # Ubuntu security updates
+pip-audit -r stochastix/cortex/requirements.txt   # on any machine with pip-audit, before changing pins
 ```
 
 ---
@@ -364,23 +496,32 @@ apt update && apt upgrade -y # Ubuntu security updates
 ## SECURITY REMINDERS
 
 - **NEVER** upload `.env` to version control or share it; secrets live on
-  the server only. `FLASK_SECRET_KEY` can be deleted — nothing reads it.
+  the server only, in a file only the deploy user can read.
 - PostgreSQL sits on an internal Docker network and is unreachable from
   outside.
 - nginx reaches the backend through a variable with Docker's embedded
   resolver, so the web server starts even when the backend container is
   down and returns 502 per request instead. With a literal hostname
   nginx resolves at startup and refuses to start at all.
-- nginx rate limits: 10r/s on /api, 30r/s general. The backend has its own
-  per-IP limiter that reads the `X-Real-IP` header set by nginx. The
-  backend limiter is in-memory and per-worker, so treat nginx as the real
-  limit.
-- The API's /predict endpoint is public and CPU-bound. The response cache
-  blunts repeat queries, but a burst of distinct pairs at 90-day horizons
-  is still expensive. If load becomes a problem, cap the horizon further
-  or put the endpoint behind a token.
+- nginx limits: 10 r/s on /api (burst 20), 30 r/s elsewhere, 100
+  connections per address, 16 KB request bodies; excess requests get 429.
+  The backend also accepts at most 30 API calls per client per minute. It believes
+  the `X-Real-IP` header only from a proxy address (`TRUSTED_PROXY_CIDRS`,
+  by default loopback and private networks, which covers nginx on the
+  Docker network), and counts IPv6 clients per /64.
+- Forecasts: each currency's forecast is computed once per ECB data
+  snapshot (at most 90 model steps) and shared by every pair and horizon.
+  At most 8 requests do model work at once; the rest get 503 with
+  Retry-After, so forecast traffic cannot stall the other endpoints.
+- Model and scaler files are never unpickled or deserialised as code
+  (`engine/artifacts.py`).
+- The audit-resolve endpoint needs a caller on loopback, a 32-character
+  secret and a matching token, and nginx hides it.
+- Every response carries a Content-Security-Policy and the other security
+  headers, scripts and styles included. If the site gains a new external
+  resource (fonts, analytics, a CDN), the policy in both nginx
+  configurations must list it or browsers will block it.
+- API docs and the OpenAPI schema are served only when `ENVIRONMENT` is
+  development, dev or local.
 - The frontend holds no secrets: no keys, no tokens, and localStorage
   carries only demo preferences.
-- Rotate the server root password and move to key-only SSH before any
-  public promotion. This file previously circulated with the IP and root
-  login pattern in it; treat the current credentials as semi-public.

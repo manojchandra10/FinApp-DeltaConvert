@@ -48,12 +48,14 @@ connected. Nothing else is needed for a design review.
 
 ## Run locally
 
-Option one, the full stack: `docker compose up --build -d` from the
-repository root, then open http://localhost/.
+Option one, the full stack: `.\dev.ps1 up --build -d` from the
+repository root (see START-LOCAL.md), then open http://localhost/.
 
 Option two, frontend against a bare backend: start the API with uvicorn
-on port 8000, change the meta tag in each page you are testing to
-`http://localhost:8000/api/v1`, then serve this folder with:
+on port 8000 with `ENVIRONMENT=development` set (the API accepts these
+local origins only in development), change the meta tag in each page you
+are testing to `http://localhost:8000/api/v1`, then serve this folder
+with:
 
 ```bash
 python3 -m http.server 5173

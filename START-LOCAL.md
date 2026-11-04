@@ -35,45 +35,30 @@ Everything below runs inside Docker. Node, npm and Python are not needed
 on the machine — the nginx image installs esbuild in its own build stage,
 which is why `docker compose build --no-cache nginx` already succeeded.
 
-## What the error meant
+## Running Compose: always through dev.ps1
 
-`env file D:\MJ\MJFin\.env not found` — the compose file passes secrets to
-the backend and the database through a `.env` file, and that file is not
-in the zip on purpose. Secrets never travel with code. The blank-string
-warnings above the error come from the same missing file.
+Run every Compose command through `.\dev.ps1` (for example
+`.\dev.ps1 up -d`). It adds the local overlay `compose.local.yml`, and on
+its first run it writes a `.env` with random secrets for this computer.
+Compose refuses to start without one: plain `docker compose up` stops
+with "required variable POSTGRES_PASSWORD is missing a value". No
+deployment can fall back to a password printed in the repository.
 
 ## One-time setup
 
 Two things are worth setting up before the full stack, and neither
 blocks a frontend-only run:
 
-1. **`.env`** — optional. The stack starts without it on weak local
-   defaults (user, password and database all `deltaconvert` / `localdev`),
-   which is fine for development. Create one only when you want your own
-   secrets, or to use the audit-resolve endpoint, which refuses every
-   request while `ADMIN_SECRET` is unset:
+1. **`.env`** — written by `dev.ps1` on its first run, with a random
+   database password and a random `ADMIN_SECRET`. Do not copy values from
+   `.env.example`, a server or another computer. The file stays on this
+   computer; Git ignores it.
 
-   ```powershell
-   Rename-Item .env.example .env
-   ```
-
-   If `.env.example` is not in the folder, write it directly:
-
-   ```powershell
-   @"
-   POSTGRES_USER=deltaconvert
-   POSTGRES_PASSWORD=local_dev_password_change_me
-   POSTGRES_DB=deltaconvert
-   ADMIN_SECRET=local_dev_admin_token_change_me
-   DOMAIN=deltaconvert.com
-   APP_BRAND=DeltaConvert
-   "@ | Set-Content -Path .env -Encoding utf8
-   ```
-
-   The server keeps its own `.env` with real secrets. Note that the
+   If a local database already exists from before this change, `dev.ps1`
+   keeps its old password (`localdev`) so the data still opens. The
    Postgres volume remembers whichever credentials it was first created
    with, so changing them later means recreating the volume with
-   `docker compose down -v`.
+   `.\dev.ps1 down -v`.
 
 2. **`.gitignore`** — the zip carries it as `_gitignore` so it stays
    visible in File Explorer. Rename it before any git work:
@@ -97,11 +82,17 @@ blocks a frontend-only run:
    ```
 
    Adjust the source path to wherever the old folder actually sits. If
-   the models are only on the server, pull them down with scp:
+   the models are only on a server, pull them down with scp as the deploy
+   user (see "Server Details" in README-DEPLOYMENT.md for `$SERVER` and
+   `$REMOTE_DIR`):
 
    ```powershell
-   scp -r root@204.168.221.119:/root/deltaconvert/stochastix/cortex/models D:\MJ\MJFin\stochastix\cortex\
+   scp -r "${SERVER}:${REMOTE_DIR}/stochastix/cortex/models" D:\MJ\MJFin\stochastix\cortex\
    ```
+
+   Only use model files from a source you control. The API refuses a
+   scaler file it cannot verify and names it in the log; retraining that
+   currency replaces it.
 
    Skipping this step is fine for a first look: live rates work without
    models, and the forecast section says which pairs have a trained model
@@ -134,11 +125,13 @@ has no trained model. No frontend edit is needed.
 
 ```powershell
 cd D:\FinApp\DeltaConvert_Deployment
-docker compose up -d db cortex nginx
+.\dev.ps1 up -d --build db cortex nginx
 ```
 
 Naming the three services keeps the certbot container out of it, since
-certificate renewal makes no sense on a laptop.
+certificate renewal makes no sense on a laptop. Every port is published on
+127.0.0.1 only, so the stack is reachable from this computer and not from
+other devices on the same network.
 
 The first run builds the backend image and installs TensorFlow, which is
 roughly 600 MB, so expect 5 to 15 minutes. Later runs reuse that layer
@@ -147,8 +140,8 @@ unless `requirements.txt` changes.
 Watch it come up:
 
 ```powershell
-docker compose ps
-docker compose logs -f cortex
+.\dev.ps1 ps
+.\dev.ps1 logs -f cortex
 ```
 
 Wait for `Cortex ready.`, then press Ctrl+C to stop tailing. The
@@ -164,8 +157,8 @@ By default all 29 currencies are trained, which takes 45 to 90 minutes
 and produces 58 files: `EUR_XXX.keras` and `EUR_XXX_scaler.joblib` for
 each. EUR needs no model of its own.
 
-For a quicker run, uncomment this line in `docker-compose.override.yml`
-and restart cortex first:
+For a quicker run, uncomment this line in `compose.local.yml` and
+recreate cortex first (`.\dev.ps1 up -d cortex`):
 
 ```yaml
       - CURRENCIES=GBP,USD,INR
@@ -222,27 +215,28 @@ tomorrow. That is expected on a fresh database.
 
 ```powershell
 # after editing anything in site\
-docker compose build nginx
-docker compose up -d nginx
+.\dev.ps1 build nginx
+.\dev.ps1 up -d nginx
 
-# after editing backend .py files
-docker compose restart cortex
+# after editing backend .py files (the code is copied into the image at
+# build time, so a restart alone would keep running the old code)
+.\dev.ps1 up -d --build cortex
 
 # after editing requirements.txt or the backend Dockerfile
-docker compose build --no-cache cortex
-docker compose up -d cortex
+.\dev.ps1 build --no-cache cortex
+.\dev.ps1 up -d cortex
 
 # stop everything
-docker compose down
+.\dev.ps1 down
 
 # stop and wipe the local database too
-docker compose down -v
+.\dev.ps1 down -v
 ```
 
 ## Why the local setup differs from the server
 
-`docker-compose.override.yml` is read automatically by Compose and applies
-only on this machine. It does three things:
+`compose.local.yml` applies only when it is named explicitly, which
+`dev.ps1` does. It does four things:
 
 - builds nginx with `nginx/nginx.local.conf`, which serves plain HTTP on
   port 80. The production config listens on 443 and reads a Let's Encrypt
@@ -251,16 +245,18 @@ only on this machine. It does three things:
 - lets nginx start without waiting for the backend health check, so the
   site is visible while TensorFlow finishes importing.
 - publishes port 8000 and switches the API docs on.
+- binds every published port to 127.0.0.1, so nobody else on the same
+  network can use the local stack or its API docs.
 
-**Do not upload `docker-compose.override.yml` to the server.** Production
-reads `docker-compose.yml` alone and keeps HTTPS, the health gate and the
-closed docs.
+**Do not upload `compose.local.yml`, `dev.ps1` or the local `.env` to the
+server.** Production reads `docker-compose.yml` alone and keeps HTTPS, the
+health gate and the closed docs.
 
 ## If something misbehaves
 
 **Port 80 already in use** — another web server or IIS holds it. Find it
 with `netstat -ano | findstr :80`, or change the nginx port mapping in
-`docker-compose.override.yml` to `"8080:80"` and use http://localhost:8080.
+`compose.local.yml` to `"127.0.0.1:8080:80"` and use http://localhost:8080.
 
 **Live rates unavailable, sample figures shown** — expected when nginx
 runs alone with `--no-deps`. With the full stack up, it means nginx could

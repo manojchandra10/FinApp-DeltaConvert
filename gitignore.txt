@@ -1,7 +1,18 @@
-# Secrets
+# Secrets. .env.example is the only .env file that belongs in the repository.
 .env
+.env.*
+!.env.example
 *.pem
 *.key
+*.crt
+*.csr
+*.p12
+*.pfx
+*.jks
+*.kdbx
+id_rsa*
+id_ecdsa*
+id_ed25519*
 
 # Local-only settings. Keeping these out of the repository means they
 # cannot reach the server, where they would weaken the production
@@ -14,14 +25,17 @@ __pycache__/
 *.pyc
 venv/
 .venv/
+.pytest_cache/
 
 # Node
 node_modules/
 dist/
 
-# ML Models (large binaries)
+# ML Models (large binaries) and the archive the deployment guide builds
 stochastix/cortex/models/*.keras
 stochastix/cortex/models/*.joblib
+*.tar.gz
+*.tgz
 
 # Temp files
 *.sqlite

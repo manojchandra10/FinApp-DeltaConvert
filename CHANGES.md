@@ -1,3 +1,28 @@
+# Security release
+
+Date: 4 November 2026
+
+Fixes for the 26 issues described in SECURITY-REPORT.md, with the evidence
+for each. The look of the site is unchanged. Before the next deployment,
+follow "SECURITY RELEASE" in README-DEPLOYMENT.md: a new `.env` with
+strong secrets, a rebuild of both images without cache, the new cron
+command, and the server hardening steps.
+
+- Backend: model and scaler files load without running code; forecasts
+  are computed once per currency per data snapshot; rate limiter, admin
+  endpoint, CORS, docs and the ECB fetcher hardened; dependencies
+  upgraded (pip-audit clean); security regression tests added.
+- Site: escaping for currency codes and alert ids, CSV formula cells
+  neutralised, stored data checked before use.
+- Infrastructure: security headers and a Content-Security-Policy on every
+  response, stricter TLS and host handling, non-root backend container,
+  `.dockerignore` files, required database password, automatic
+  certificate reloads, log rotation, local ports on 127.0.0.1.
+- Guides: server details removed, server hardening added, local setup
+  through `dev.ps1`.
+
+---
+
 # Changes — new interface, live rates wired, Forecast page added
 
 Date: 19 July 2026
